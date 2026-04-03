@@ -1,0 +1,49 @@
+﻿Starting project at C:\Users\sriva\OneDrive\Desktop\GudCart
+node.exe : Error: The required package 
+`expo-asset` cannot be found
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" 
+"C:\Users\sriva\AppData\Roaming\ ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpeci 
+   fied: (Error: The requ...cannot be  
+   found:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCo 
+   mmandError
+ 
+Error: The required package 
+`expo-asset` cannot be found
+    at getAssetPlugins (C:\Users\sriva\
+OneDrive\Desktop\GudCart\node_modules\@
+expo\metro-config\src\ExpoMetroConfig.t
+s:65:11)
+    at getDefaultConfig (C:\Users\sriva
+\OneDrive\Desktop\GudCart\node_modules\
+@expo\metro-config\src\ExpoMetroConfig.
+ts:373:21)
+    at loadMetroConfigAsync (C:\Users\s
+riva\OneDrive\Desktop\GudCart\node_modu
+les\@expo\cli\src\start\server\metro\in
+stantiateMetro.ts:96:43)
+    at instantiateMetroAsync (C:\Users\
+sriva\OneDrive\Desktop\GudCart\node_mod
+ules\@expo\cli\src\start\server\metro\i
+nstantiateMetro.ts:195:53)
+    at MetroBundlerDevServer.startImple
+mentationAsync (C:\Users\sriva\OneDrive
+\Desktop\GudCart\node_modules\@expo\cli
+\src\start\server\metro\MetroBundlerDev
+Server.ts:940:69)
+    at 
+MetroBundlerDevServer.startAsync (C:\Us
+ers\sriva\OneDrive\Desktop\GudCart\node
+_modules\@expo\cli\src\start\server\Bun
+dlerDevServer.ts:160:18)
+    at DevServerManager.startAsync (C:\
+Users\sriva\OneDrive\Desktop\GudCart\no
+de_modules\@expo\cli\src\start\server\D
+evServerManager.ts:184:7)
+    at startAsync (C:\Users\sriva\OneDr
+ive\Desktop\GudCart\node_modules\@expo\
+cli\src\start\startAsync.ts:99:3)
