@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import useTheme from '../../hooks/useTheme';
+import { useCart } from '../../context/CartContext';
 
 const { width } = Dimensions.get('window');
 const COLUMN_COUNT = 2;
@@ -24,6 +25,7 @@ const ITEM_WIDTH = (width - 48) / COLUMN_COUNT;
 const ProductListScreen = ({ navigation, route }) => {
     const { title = 'Trending Now', query = '' } = route.params || {};
     const { colors, gradients, isDark } = useTheme();
+    const { cartItems } = useCart();
     const insets = useSafeAreaInsets();
     const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -32,7 +34,7 @@ const ProductListScreen = ({ navigation, route }) => {
     const [filteredProducts, setFilteredProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState(query);
-    
+
     // UI State
     const [showSortModal, setShowSortModal] = useState(false);
     const [sortBy, setSortBy] = useState('Newest');
@@ -60,7 +62,7 @@ const ProductListScreen = ({ navigation, route }) => {
 
     useEffect(() => {
         // Filter products based on search query
-        const filtered = products.filter(p => 
+        const filtered = products.filter(p =>
             p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             p.category.toLowerCase().includes(searchQuery.toLowerCase())
         );
@@ -90,7 +92,7 @@ const ProductListScreen = ({ navigation, route }) => {
     });
 
     const renderProduct = ({ item, index }) => (
-        <TouchableOpacity 
+        <TouchableOpacity
             style={[styles.productCard, { backgroundColor: colors.surface }]}
             activeOpacity={0.8}
             onPress={() => navigation.navigate('ProductDetail', { product: item })}
@@ -116,7 +118,7 @@ const ProductListScreen = ({ navigation, route }) => {
                 <Text style={[styles.productName, { color: colors.textPrimary }]} numberOfLines={2}>
                     {item.name}
                 </Text>
-                
+
                 <View style={styles.ratingRow}>
                     <Ionicons name="star" size={12} color="#F5C842" />
                     <Text style={[styles.ratingText, { color: colors.textSecondary }]}>{item.rating}</Text>
@@ -135,9 +137,9 @@ const ProductListScreen = ({ navigation, route }) => {
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header Sticky BG */}
             <Animated.View style={[
-                styles.stickyHeader, 
-                { 
-                    backgroundColor: colors.surface, 
+                styles.stickyHeader,
+                {
+                    backgroundColor: colors.surface,
                     opacity: headerOpacity,
                     borderBottomColor: colors.border,
                     paddingTop: insets.top,
@@ -150,7 +152,7 @@ const ProductListScreen = ({ navigation, route }) => {
                     <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
                         <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                     </TouchableOpacity>
-                    
+
                     <Animated.View style={[
                         styles.headerTitleContainer,
                         { opacity: headerOpacity, transform: [{ translateY: headerTranslate }] }
@@ -158,8 +160,16 @@ const ProductListScreen = ({ navigation, route }) => {
                         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{title}</Text>
                     </Animated.View>
 
-                    <TouchableOpacity style={styles.iconBtn}>
+                    <TouchableOpacity
+                        style={styles.iconBtn}
+                        onPress={() => navigation.navigate('Main', { screen: 'Cart' })}
+                    >
                         <Ionicons name="cart-outline" size={24} color={colors.textPrimary} />
+                        {cartItems.length > 0 && (
+                            <View style={styles.cartBadge}>
+                                <Text style={styles.cartBadgeText}>{cartItems.length}</Text>
+                            </View>
+                        )}
                     </TouchableOpacity>
                 </View>
 
@@ -175,7 +185,7 @@ const ProductListScreen = ({ navigation, route }) => {
                             onChangeText={setSearchQuery}
                         />
                     </View>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={[styles.filterBtn, { backgroundColor: colors.accent }]}
                         onPress={() => setShowSortModal(true)}
                     >
@@ -229,15 +239,15 @@ const ProductListScreen = ({ navigation, route }) => {
                     <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
                         <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
                         <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Sort By</Text>
-                        
+
                         {['Newest', 'Popular', 'Price: Low to High', 'Price: High to Low', 'Rating'].map((option) => (
-                            <TouchableOpacity 
-                                key={option} 
+                            <TouchableOpacity
+                                key={option}
                                 style={styles.sortOption}
                                 onPress={() => handleSort(option)}
                             >
                                 <Text style={[
-                                    styles.sortOptionText, 
+                                    styles.sortOptionText,
                                     { color: sortBy === option ? colors.accent : colors.textPrimary }
                                 ]}>
                                     {option}
@@ -259,17 +269,17 @@ const styles = StyleSheet.create({
         height: 120, zIndex: 10, borderBottomWidth: 1,
     },
     header: { zIndex: 20, paddingHorizontal: 16 },
-    headerRow: { 
-        flexDirection: 'row', alignItems: 'center', 
-        justifyContent: 'space-between', height: 60 
+    headerRow: {
+        flexDirection: 'row', alignItems: 'center',
+        justifyContent: 'space-between', height: 60
     },
     headerTitleContainer: { flex: 1, alignItems: 'center' },
     headerTitle: { fontSize: 18, fontWeight: '800' },
     iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-    
-    searchFilterRow: { 
-        flexDirection: 'row', alignItems: 'center', gap: 12, 
-        marginTop: 8, paddingBottom: 12 
+
+    searchFilterRow: {
+        flexDirection: 'row', alignItems: 'center', gap: 12,
+        marginTop: 8, paddingBottom: 12
     },
     searchBar: {
         flex: 1, height: 48, borderRadius: 14,
@@ -277,8 +287,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16, borderWidth: 1,
     },
     searchInput: { flex: 1, marginLeft: 10, fontSize: 15, fontWeight: '500' },
-    filterBtn: { 
-        width: 48, height: 48, borderRadius: 14, 
+    filterBtn: {
+        width: 48, height: 48, borderRadius: 14,
         alignItems: 'center', justifyContent: 'center',
     },
 
@@ -347,10 +357,28 @@ const styles = StyleSheet.create({
     },
     modalTitle: { fontSize: 20, fontWeight: '800', marginBottom: 20 },
     sortOption: {
-        flexDirection: 'row', alignItems: 'center', 
+        flexDirection: 'row', alignItems: 'center',
         justifyContent: 'space-between', paddingVertical: 16,
     },
     sortOptionText: { fontSize: 16, fontWeight: '600' },
+    cartBadge: {
+        position: 'absolute',
+        top: 2,
+        right: 2,
+        backgroundColor: '#FFD700',
+        borderRadius: 9,
+        width: 18,
+        height: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1.5,
+        borderColor: '#1A0B2E',
+    },
+    cartBadgeText: {
+        color: '#1A0B2E',
+        fontSize: 10,
+        fontWeight: '900',
+    },
 });
 
 export default ProductListScreen;

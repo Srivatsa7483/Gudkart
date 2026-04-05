@@ -1,10 +1,6 @@
 // ─── AppNavigator.js ───────────────────────────────────────────────────────
-// Gudkart — Expo Go compatible
-//
-// Root stack:
-//   Auth  → Login / Register
-//   Main  → Bottom Tabs (Home, Explore, Cart, Saved, Profile)
-//   Orders → OrdersScreen  (pushed from Profile → My Orders)
+// GudKart — Expo Go compatible
+// No mandatory login — browse freely, auth only when needed
 // ──────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
@@ -14,11 +10,15 @@ import { createStackNavigator } from '@react-navigation/stack';
 import BottomTabNavigator from './BottomTabNavigator';
 import AuthStack from './AuthStack';
 import Splash from '../screens/auth/SplashScreen';
+
 import OrdersScreen from '../screens/orders/OrdersScreen';
 import OrderDetailScreen from '../screens/orders/OrderDetailScreen';
 import NotificationsScreen from '../screens/notification/NotificationsScreen';
 import AddReviewScreen from '../screens/products/AddReviewScreen';
+
+// ✅ Cart Flow: Cart (tab) → Checkout → AddAddress → OrderSuccess
 import CheckoutScreen from '../screens/cart/CheckoutScreen';
+import AddAddressScreen from '../screens/cart/AddAddressScreen';
 import OrderSuccessScreen from '../screens/cart/OrderSuccessScreen';
 
 const Stack = createStackNavigator();
@@ -26,7 +26,7 @@ const Stack = createStackNavigator();
 const AppNavigator = () => (
     <NavigationContainer>
         <Stack.Navigator
-            initialRouteName="Splash"       // ← Restore splash as entry
+            initialRouteName="Splash"
             screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
         >
             {/* Splash */}
@@ -35,15 +35,24 @@ const AppNavigator = () => (
             {/* Auth */}
             <Stack.Screen name="Auth" component={AuthStack} />
 
-            {/* Main tabs */}
+            {/* Main Bottom Tabs */}
             <Stack.Screen name="Main" component={BottomTabNavigator} />
 
-            {/* Orders & Notifications */}
+            {/* Orders */}
             <Stack.Screen name="Orders" component={OrdersScreen} />
             <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
+
+            {/* Notifications */}
             <Stack.Screen name="Notifications" component={NotificationsScreen} />
+
+            {/* Reviews */}
             <Stack.Screen name="AddReview" component={AddReviewScreen} />
+
+            {/* ── Checkout Flow ──────────────────────────────
+                Tab:Cart → Checkout → AddAddress → OrderSuccess
+            ─────────────────────────────────────────────── */}
             <Stack.Screen name="Checkout" component={CheckoutScreen} />
+            <Stack.Screen name="AddAddress" component={AddAddressScreen} />
             <Stack.Screen name="OrderSuccess" component={OrderSuccessScreen} />
         </Stack.Navigator>
     </NavigationContainer>

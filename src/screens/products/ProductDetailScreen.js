@@ -33,6 +33,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import useTheme from '../../hooks/useTheme';
 import { useAuth } from '../../context/AuthContext';
+import { useCart } from '../../context/CartContext';
 import { PRODUCT_DETAIL } from '../../data/mockData';
 
 const { width, height } = Dimensions.get('window');
@@ -192,6 +193,7 @@ const ProductDetailScreen = ({ navigation, route }) => {
     const product = route?.params?.product ?? PRODUCT_DETAIL;
     const { colors, gradients, isDark } = useTheme();
     const { isAuthenticated } = useAuth();
+    const { addToCart } = useCart();
 
     const [selectedColor, setSelectedColor] = useState(product.colors[0]?.id);
     const [isWishlisted, setIsWishlisted] = useState(false);
@@ -215,12 +217,19 @@ const ProductDetailScreen = ({ navigation, route }) => {
             navigation.navigate('Auth', { screen: 'Login' });
             return;
         }
+
+        const colorName = product.colors.find(c => c.id === selectedColor)?.name || null;
+
+        addToCart(product, quantity, colorName);
+
         Alert.alert(
             '✅ Added to Cart',
             `${product.name} (×${quantity}) added to your Gudkart bag!`,
-            [{ text: 'OK' }],
+            [
+                { text: 'View Cart', onPress: () => navigation.navigate('Main', { screen: 'Cart' }) },
+                { text: 'OK', style: 'cancel' }
+            ],
         );
-        // TODO: dispatch cartSlice action
     };
 
     const handleBuyNow = () => {

@@ -8,6 +8,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import useTheme from '../hooks/useTheme';
+import { useCart } from '../context/CartContext';
 
 import HomeStack from './HomeStack';
 import ExploreScreen from '../screens/explore/ExploreScreen';
@@ -29,6 +30,7 @@ const TAB_CONFIG = [
 const CustomTabBar = ({ state, descriptors, navigation }) => {
     const { colors } = useTheme();
     const insets = useSafeAreaInsets();
+    const { cartItems } = useCart();
 
     return (
         <View style={[
@@ -63,6 +65,11 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
                                 size={22}
                                 color={isFocused ? colors.tabActive : colors.tabInactive}
                             />
+                            {config.name === 'Cart' && cartItems.length > 0 && (
+                                <View style={[styles.badge, { backgroundColor: colors.accent }]}>
+                                    <Text style={styles.badgeText}>{cartItems.length}</Text>
+                                </View>
+                            )}
                             <Text
                                 style={[
                                     styles.tabLabel,
@@ -107,6 +114,24 @@ const styles = StyleSheet.create({
     tabButton: { alignItems: 'center', justifyContent: 'center', paddingVertical: 4, gap: 2, minWidth: 50 },
     activeIndicator: { position: 'absolute', top: -6, width: 24, height: 3, borderRadius: 2 },
     tabLabel: { fontSize: 10 },
+    badge: {
+        position: 'absolute',
+        top: 0,
+        right: 4,
+        backgroundColor: '#FFD700',
+        borderRadius: 8,
+        minWidth: 16,
+        height: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 4,
+        zIndex: 1,
+    },
+    badgeText: {
+        color: '#1A0B2E',
+        fontSize: 10,
+        fontWeight: 'bold',
+    },
 });
 
 export default BottomTabNavigator;

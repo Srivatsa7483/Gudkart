@@ -47,20 +47,43 @@ const RegisterScreen = ({ navigation }) => {
         if (!agreedToTerms) return Alert.alert('Error', 'Please agree to Terms & Conditions');
 
         setIsLoading(true);
-        const result = await register(formData);
+
+        // ─────────────────────────────────────────────────────────────────────
+        // NOTE: Using isTest: true because Firebase client SDK is not yet set up.
+        // Once Firebase is integrated, replace this block with:
+        //   const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, password);
+        //   const idToken = await userCredential.user.getIdToken();
+        //   const registerPayload = { idToken, fullName, phone: `+91${phone}`, email };
+        // ─────────────────────────────────────────────────────────────────────
+        const registerPayload = {
+            isTest: true,
+            fullName: formData.fullName,
+            email: formData.email,
+            phone: `+91${formData.phone}`,   // add country code
+            password: formData.password,
+            // dob: formData.dob,             // add if you collect date of birth
+        };
+
+        console.log('📤 [RegisterScreen] → POST /auth/register');
+        console.log('📤 [RegisterScreen] Payload:', JSON.stringify(registerPayload, null, 2));
+
+        const result = await register(registerPayload);
         setIsLoading(false);
+
+        console.log('📥 [RegisterScreen] ← Response from /auth/register:');
+        console.log('📥 [RegisterScreen]', JSON.stringify(result, null, 2));
 
         if (result.success) {
             Alert.alert('Success', 'Registration successful!', [
-                { 
-                    text: 'OK', 
+                {
+                    text: 'OK',
                     onPress: () => {
                         if (navigation.canGoBack()) {
                             navigation.goBack();
                         } else {
                             navigation.getParent()?.replace('Main') ?? navigation.replace('Main');
                         }
-                    } 
+                    }
                 }
             ]);
         } else {
@@ -74,19 +97,13 @@ const RegisterScreen = ({ navigation }) => {
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
-            <LinearGradient
-                colors={gradients.background}
-                style={styles.gradient}
-            >
+            <LinearGradient colors={gradients.background} style={styles.gradient}>
                 <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
                     <KeyboardAvoidingView
                         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                         style={styles.keyboardView}
                     >
-                        <ScrollView
-                            contentContainerStyle={styles.scrollContent}
-                            showsVerticalScrollIndicator={false}
-                        >
+                        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                             {/* Header */}
                             <View style={styles.header}>
                                 <TouchableOpacity
@@ -97,7 +114,7 @@ const RegisterScreen = ({ navigation }) => {
                                 </TouchableOpacity>
                             </View>
 
-                            {/* Logo Section */}
+                            {/* Logo */}
                             <View style={styles.logoContainer}>
                                 <View style={[styles.logoCircle, { backgroundColor: colors.accent }]}>
                                     <Text style={[styles.logoText, { color: colors.background }]}>G</Text>
@@ -115,9 +132,9 @@ const RegisterScreen = ({ navigation }) => {
                                 </Text>
                             </View>
 
-                            {/* Registration Form */}
+                            {/* Form */}
                             <View style={styles.formContainer}>
-                                {/* Full Name Input */}
+                                {/* Full Name */}
                                 <View style={[styles.inputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                     <Ionicons name="person-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                                     <TextInput
@@ -130,7 +147,7 @@ const RegisterScreen = ({ navigation }) => {
                                     />
                                 </View>
 
-                                {/* Email Input */}
+                                {/* Email */}
                                 <View style={[styles.inputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                     <Ionicons name="mail-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                                     <TextInput
@@ -145,12 +162,12 @@ const RegisterScreen = ({ navigation }) => {
                                     />
                                 </View>
 
-                                {/* Phone Input */}
+                                {/* Phone */}
                                 <View style={[styles.inputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                     <Ionicons name="call-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                                     <TextInput
                                         style={[styles.input, { color: colors.textPrimary }]}
-                                        placeholder="Phone Number"
+                                        placeholder="Phone Number (10 digits)"
                                         placeholderTextColor={colors.textMuted}
                                         value={formData.phone}
                                         onChangeText={(value) => updateFormData('phone', value)}
@@ -159,7 +176,7 @@ const RegisterScreen = ({ navigation }) => {
                                     />
                                 </View>
 
-                                {/* Password Input */}
+                                {/* Password */}
                                 <View style={[styles.inputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                     <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                                     <TextInput
@@ -171,10 +188,7 @@ const RegisterScreen = ({ navigation }) => {
                                         secureTextEntry={!showPassword}
                                         autoCapitalize="none"
                                     />
-                                    <TouchableOpacity
-                                        onPress={() => setShowPassword(!showPassword)}
-                                        style={styles.eyeIcon}
-                                    >
+                                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
                                         <Ionicons
                                             name={showPassword ? 'eye-outline' : 'eye-off-outline'}
                                             size={20}
@@ -183,7 +197,7 @@ const RegisterScreen = ({ navigation }) => {
                                     </TouchableOpacity>
                                 </View>
 
-                                {/* Confirm Password Input */}
+                                {/* Confirm Password */}
                                 <View style={[styles.inputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                     <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                                     <TextInput
@@ -195,10 +209,7 @@ const RegisterScreen = ({ navigation }) => {
                                         secureTextEntry={!showConfirmPassword}
                                         autoCapitalize="none"
                                     />
-                                    <TouchableOpacity
-                                        onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                                        style={styles.eyeIcon}
-                                    >
+                                    <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeIcon}>
                                         <Ionicons
                                             name={showConfirmPassword ? 'eye-outline' : 'eye-off-outline'}
                                             size={20}
@@ -220,15 +231,10 @@ const RegisterScreen = ({ navigation }) => {
                                     </View>
                                 </View>
 
-                                {/* Terms & Conditions Checkbox */}
-                                <TouchableOpacity
-                                    style={styles.checkboxContainer}
-                                    onPress={() => setAgreedToTerms(!agreedToTerms)}
-                                >
+                                {/* Terms Checkbox */}
+                                <TouchableOpacity style={styles.checkboxContainer} onPress={() => setAgreedToTerms(!agreedToTerms)}>
                                     <View style={[styles.checkbox, { borderColor: colors.border }, agreedToTerms && { backgroundColor: colors.accent, borderColor: colors.accent }]}>
-                                        {agreedToTerms && (
-                                            <Ionicons name="checkmark" size={16} color={colors.background} />
-                                        )}
+                                        {agreedToTerms && <Ionicons name="checkmark" size={16} color={colors.background} />}
                                     </View>
                                     <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>
                                         I agree to{' '}
@@ -239,44 +245,34 @@ const RegisterScreen = ({ navigation }) => {
                                 </TouchableOpacity>
 
                                 {/* Register Button */}
-                                <TouchableOpacity
-                                    style={styles.registerButton}
-                                    onPress={handleRegister}
-                                    disabled={isLoading}
-                                >
+                                <TouchableOpacity style={styles.registerButton} onPress={handleRegister} disabled={isLoading}>
                                     <LinearGradient
                                         colors={gradients.accentButton}
                                         start={{ x: 0, y: 0 }}
                                         end={{ x: 1, y: 0 }}
                                         style={styles.registerButtonGradient}
                                     >
-                                        {isLoading ? (
-                                            <Text style={[styles.registerButtonText, { color: '#0D0B1E' }]}>Creating Account...</Text>
-                                        ) : (
-                                            <Text style={[styles.registerButtonText, { color: '#0D0B1E' }]}>Sign Up</Text>
-                                        )}
+                                        <Text style={[styles.registerButtonText, { color: '#0D0B1E' }]}>
+                                            {isLoading ? 'Creating Account...' : 'Sign Up'}
+                                        </Text>
                                     </LinearGradient>
                                 </TouchableOpacity>
 
-                                {/* Divider */}
                                 <View style={styles.dividerContainer}>
                                     <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
                                     <Text style={[styles.dividerText, { color: colors.textMuted }]}>OR</Text>
                                     <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
                                 </View>
 
-                                {/* Social Login Buttons */}
                                 <View style={styles.socialContainer}>
                                     <TouchableOpacity style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                         <Ionicons name="logo-google" size={24} color={colors.textPrimary} />
                                     </TouchableOpacity>
-
                                     <TouchableOpacity style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                         <Ionicons name="logo-apple" size={24} color={colors.textPrimary} />
                                     </TouchableOpacity>
                                 </View>
 
-                                {/* Login Link */}
                                 <View style={styles.loginContainer}>
                                     <Text style={[styles.loginText, { color: colors.textSecondary }]}>Already have an account? </Text>
                                     <TouchableOpacity onPress={() => navigation.navigate('Login')}>
@@ -296,31 +292,18 @@ const styles = StyleSheet.create({
     container: { flex: 1 },
     gradient: { flex: 1 },
     keyboardView: { flex: 1 },
-    scrollContent: {
-        flexGrow: 1,
-        paddingHorizontal: 24,
-        paddingBottom: 40,
-    },
+    scrollContent: { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 40 },
     header: { paddingTop: 20, marginBottom: 20 },
-    backButton: {
-        width: 40, height: 40, borderRadius: 20,
-        justifyContent: 'center', alignItems: 'center', borderWidth: 1,
-    },
+    backButton: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', borderWidth: 1 },
     logoContainer: { alignItems: 'center', marginBottom: 32 },
-    logoCircle: {
-        width: 70, height: 70, borderRadius: 35,
-        justifyContent: 'center', alignItems: 'center', marginBottom: 12,
-    },
+    logoCircle: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
     logoText: { fontSize: 36, fontWeight: 'bold' },
     brandName: { fontSize: 28, fontWeight: 'bold' },
     welcomeContainer: { marginBottom: 24 },
     welcomeText: { fontSize: 26, fontWeight: 'bold', marginBottom: 8 },
     welcomeSubtext: { fontSize: 16 },
     formContainer: { flex: 1 },
-    inputContainer: {
-        flexDirection: 'row', alignItems: 'center',
-        borderRadius: 12, paddingHorizontal: 16, marginBottom: 16, borderWidth: 1,
-    },
+    inputContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 16, marginBottom: 16, borderWidth: 1 },
     inputIcon: { marginRight: 12 },
     input: { flex: 1, height: 56, fontSize: 16 },
     eyeIcon: { padding: 8 },
@@ -329,10 +312,7 @@ const styles = StyleSheet.create({
     requirementRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
     requirementText: { fontSize: 13, marginLeft: 8 },
     checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
-    checkbox: {
-        width: 24, height: 24, borderRadius: 6, borderWidth: 2,
-        justifyContent: 'center', alignItems: 'center', marginRight: 12,
-    },
+    checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
     checkboxText: { fontSize: 14, flex: 1 },
     linkText: { fontWeight: '600' },
     registerButton: { borderRadius: 12, overflow: 'hidden', marginBottom: 24 },
@@ -342,10 +322,7 @@ const styles = StyleSheet.create({
     dividerLine: { flex: 1, height: 1 },
     dividerText: { paddingHorizontal: 16, fontSize: 14 },
     socialContainer: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginBottom: 24 },
-    socialButton: {
-        width: 56, height: 56, borderRadius: 12,
-        justifyContent: 'center', alignItems: 'center', borderWidth: 1,
-    },
+    socialButton: { width: 56, height: 56, borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1 },
     loginContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 16 },
     loginText: { fontSize: 16 },
     loginLink: { fontSize: 16, fontWeight: 'bold' },

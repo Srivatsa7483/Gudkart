@@ -24,7 +24,6 @@ const LoginScreen = ({ navigation }) => {
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
-    // Validation
     const validateEmail = (email) => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         return emailRegex.test(email);
@@ -46,8 +45,26 @@ const LoginScreen = ({ navigation }) => {
 
         setIsLoading(true);
 
-        const result = await login(email, password);
+        // ─────────────────────────────────────────────────────────────────────
+        // NOTE: Using isTest: true because Firebase client SDK is not yet set up.
+        // Once Firebase is integrated, replace this with:
+        //   const userCredential = await firebase.auth().signInWithEmailAndPassword(email, password);
+        //   const idToken = await userCredential.user.getIdToken();
+        //   const loginPayload = { idToken };
+        // ─────────────────────────────────────────────────────────────────────
+        const loginPayload = {
+            isTest: true,
+            email: email,
+        };
+
+        console.log('📤 [LoginScreen] → POST /auth/login');
+        console.log('📤 [LoginScreen] Payload:', JSON.stringify(loginPayload, null, 2));
+
+        const result = await login(loginPayload);
         setIsLoading(false);
+
+        console.log('📥 [LoginScreen] ← Response from /auth/login:');
+        console.log('📥 [LoginScreen]', JSON.stringify(result, null, 2));
 
         if (result.success) {
             if (navigation.canGoBack()) {
@@ -65,20 +82,14 @@ const LoginScreen = ({ navigation }) => {
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
-            <LinearGradient
-                colors={gradients.background}
-                style={styles.gradient}
-            >
+            <LinearGradient colors={gradients.background} style={styles.gradient}>
                 <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
                     <KeyboardAvoidingView
                         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                         style={styles.keyboardView}
                     >
-                        <ScrollView
-                            contentContainerStyle={styles.scrollContent}
-                            showsVerticalScrollIndicator={false}
-                        >
-                            {/* Logo Section */}
+                        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                            {/* Logo */}
                             <View style={styles.logoContainer}>
                                 <View style={[styles.logoCircle, { backgroundColor: colors.accent }]}>
                                     <Text style={[styles.logoText, { color: colors.background }]}>G</Text>
@@ -89,17 +100,14 @@ const LoginScreen = ({ navigation }) => {
                                 <Text style={[styles.tagline, { color: colors.textSecondary }]}>Your Trusted Marketplace</Text>
                             </View>
 
-                            {/* Welcome Text */}
+                            {/* Welcome */}
                             <View style={styles.welcomeContainer}>
                                 <Text style={[styles.welcomeText, { color: colors.textPrimary }]}>Welcome Back!</Text>
-                                <Text style={[styles.welcomeSubtext, { color: colors.textSecondary }]}>
-                                    Login to continue shopping
-                                </Text>
+                                <Text style={[styles.welcomeSubtext, { color: colors.textSecondary }]}>Login to continue shopping</Text>
                             </View>
 
-                            {/* Login Form */}
+                            {/* Form */}
                             <View style={styles.formContainer}>
-                                {/* Email Input */}
                                 <View style={[styles.inputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                     <Ionicons name="mail-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                                     <TextInput
@@ -114,7 +122,6 @@ const LoginScreen = ({ navigation }) => {
                                     />
                                 </View>
 
-                                {/* Password Input */}
                                 <View style={[styles.inputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                     <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                                     <TextInput
@@ -126,10 +133,7 @@ const LoginScreen = ({ navigation }) => {
                                         secureTextEntry={!showPassword}
                                         autoCapitalize="none"
                                     />
-                                    <TouchableOpacity
-                                        onPress={() => setShowPassword(!showPassword)}
-                                        style={styles.eyeIcon}
-                                    >
+                                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
                                         <Ionicons
                                             name={showPassword ? 'eye-outline' : 'eye-off-outline'}
                                             size={20}
@@ -138,39 +142,29 @@ const LoginScreen = ({ navigation }) => {
                                     </TouchableOpacity>
                                 </View>
 
-                                {/* Forgot Password */}
                                 <TouchableOpacity style={styles.forgotPasswordContainer}>
                                     <Text style={[styles.forgotPasswordText, { color: colors.accent }]}>Forgot Password?</Text>
                                 </TouchableOpacity>
 
-                                {/* Login Button */}
-                                <TouchableOpacity
-                                    style={styles.loginButton}
-                                    onPress={handleLogin}
-                                    disabled={isLoading}
-                                >
+                                <TouchableOpacity style={styles.loginButton} onPress={handleLogin} disabled={isLoading}>
                                     <LinearGradient
                                         colors={gradients.accentButton}
                                         start={{ x: 0, y: 0 }}
                                         end={{ x: 1, y: 0 }}
                                         style={styles.loginButtonGradient}
                                     >
-                                        {isLoading ? (
-                                            <Text style={[styles.loginButtonText, { color: '#0D0B1E' }]}>Loading...</Text>
-                                        ) : (
-                                            <Text style={[styles.loginButtonText, { color: '#0D0B1E' }]}>Login</Text>
-                                        )}
+                                        <Text style={[styles.loginButtonText, { color: '#0D0B1E' }]}>
+                                            {isLoading ? 'Loading...' : 'Login'}
+                                        </Text>
                                     </LinearGradient>
                                 </TouchableOpacity>
 
-                                {/* Divider */}
                                 <View style={styles.dividerContainer}>
                                     <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
                                     <Text style={[styles.dividerText, { color: colors.textMuted }]}>OR</Text>
                                     <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
                                 </View>
 
-                                {/* Social Login Buttons */}
                                 <View style={styles.socialContainer}>
                                     <TouchableOpacity
                                         style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -178,7 +172,6 @@ const LoginScreen = ({ navigation }) => {
                                     >
                                         <Ionicons name="logo-google" size={24} color={colors.textPrimary} />
                                     </TouchableOpacity>
-
                                     <TouchableOpacity
                                         style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.border }]}
                                         onPress={handleAppleLogin}
@@ -187,7 +180,6 @@ const LoginScreen = ({ navigation }) => {
                                     </TouchableOpacity>
                                 </View>
 
-                                {/* Sign Up Link */}
                                 <View style={styles.signupContainer}>
                                     <Text style={[styles.signupText, { color: colors.textSecondary }]}>Don't have an account? </Text>
                                     <TouchableOpacity onPress={() => navigation.navigate('Register')}>
@@ -196,7 +188,6 @@ const LoginScreen = ({ navigation }) => {
                                 </View>
                             </View>
 
-                            {/* Demo Credentials Info */}
                             <View style={[styles.demoContainer, { backgroundColor: colors.accent + '15', borderColor: colors.accent }]}>
                                 <Text style={[styles.demoText, { color: colors.accent }]}>Demo Credentials:</Text>
                                 <Text style={[styles.demoCredentials, { color: colors.textSecondary }]}>Email: test@sellsathi.com</Text>
@@ -214,17 +205,9 @@ const styles = StyleSheet.create({
     container: { flex: 1 },
     gradient: { flex: 1 },
     keyboardView: { flex: 1 },
-    scrollContent: {
-        flexGrow: 1,
-        paddingHorizontal: 24,
-        paddingTop: 20,
-        paddingBottom: 40,
-    },
+    scrollContent: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 20, paddingBottom: 40 },
     logoContainer: { alignItems: 'center', marginTop: 20, marginBottom: 40 },
-    logoCircle: {
-        width: 80, height: 80, borderRadius: 40,
-        justifyContent: 'center', alignItems: 'center', marginBottom: 16,
-    },
+    logoCircle: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
     logoText: { fontSize: 40, fontWeight: 'bold' },
     brandName: { fontSize: 32, fontWeight: 'bold', marginBottom: 8 },
     tagline: { fontSize: 14 },
@@ -232,10 +215,7 @@ const styles = StyleSheet.create({
     welcomeText: { fontSize: 28, fontWeight: 'bold', marginBottom: 8 },
     welcomeSubtext: { fontSize: 16 },
     formContainer: { flex: 1 },
-    inputContainer: {
-        flexDirection: 'row', alignItems: 'center',
-        borderRadius: 12, paddingHorizontal: 16, marginBottom: 16, borderWidth: 1,
-    },
+    inputContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 16, marginBottom: 16, borderWidth: 1 },
     inputIcon: { marginRight: 12 },
     input: { flex: 1, height: 56, fontSize: 16 },
     eyeIcon: { padding: 8 },
@@ -248,16 +228,11 @@ const styles = StyleSheet.create({
     dividerLine: { flex: 1, height: 1 },
     dividerText: { paddingHorizontal: 16, fontSize: 14 },
     socialContainer: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginBottom: 32 },
-    socialButton: {
-        width: 56, height: 56, borderRadius: 12,
-        justifyContent: 'center', alignItems: 'center', borderWidth: 1,
-    },
+    socialButton: { width: 56, height: 56, borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1 },
     signupContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 16 },
     signupText: { fontSize: 16 },
     signupLink: { fontSize: 16, fontWeight: 'bold' },
-    demoContainer: {
-        marginTop: 24, padding: 16, borderRadius: 12, borderWidth: 1,
-    },
+    demoContainer: { marginTop: 24, padding: 16, borderRadius: 12, borderWidth: 1 },
     demoText: { fontSize: 14, fontWeight: 'bold', marginBottom: 8 },
     demoCredentials: { fontSize: 13, marginVertical: 2 },
 });

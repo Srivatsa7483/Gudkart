@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import useTheme from '../../hooks/useTheme';
 import { useAuth } from '../../context/AuthContext';
+import { useCart } from '../../context/CartContext';
 import {
     CATEGORIES,
     FLASH_DEALS,
@@ -186,17 +187,17 @@ const SectionHeader = ({ title, colors, onViewAll }) => (
 const HomeScreen = ({ navigation }) => {
     const { colors, gradients, isDark } = useTheme();
     const { isAuthenticated } = useAuth();
+    const { cartItems, addToCart } = useCart();
     const [selectedCategory, setSelectedCategory] = useState('1');
-    const [cartCount, setCartCount] = useState(0);
     const [dealIndex, setDealIndex] = useState(0);
     const scrollY = useRef(new Animated.Value(0)).current;
 
-    const handleAddToCart = () => {
+    const handleAddToCart = (item) => {
         if (!isAuthenticated) {
             navigation.navigate('Auth', { screen: 'Login' });
             return;
         }
-        setCartCount((c) => c + 1);
+        addToCart(item, 1);
     };
 
     // Navigate to product detail — passing the mock detail object
@@ -222,11 +223,14 @@ const HomeScreen = ({ navigation }) => {
                     </View>
                     <View style={styles.headerRight}>
                         <NotificationBadge iconSize={20} iconColor={colors.textSecondary} />
-                        <TouchableOpacity style={[styles.headerIcon, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <TouchableOpacity 
+                            style={[styles.headerIcon, { backgroundColor: colors.card, borderColor: colors.border }]}
+                            onPress={() => navigation.navigate('Main', { screen: 'Cart' })}
+                        >
                             <Ionicons name="bag-outline" size={20} color={colors.textSecondary} />
-                            {cartCount > 0 && (
+                            {cartItems.length > 0 && (
                                 <View style={[styles.cartBadge, { backgroundColor: colors.accent }]}>
-                                    <Text style={[styles.cartBadgeText, { color: colors.textInverse }]}>{cartCount}</Text>
+                                    <Text style={[styles.cartBadgeText, { color: colors.textInverse }]}>{cartItems.length}</Text>
                                 </View>
                             )}
                         </TouchableOpacity>

@@ -39,6 +39,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import useTheme from '../../hooks/useTheme';
+import { useCart } from '../../context/CartContext';
 import { PRODUCT_DETAIL } from '../../data/mockData';
 
 const { width, height } = Dimensions.get('window');
@@ -106,7 +107,7 @@ const StarRating = ({ rating, color }) => (
 );
 
 // ─── Product Card ──────────────────────────────────────────────────────────
-const ProductCard = ({ item, colors, gradients, onPress }) => {
+const ProductCard = ({ item, colors, gradients, onPress, onAddToCart }) => {
     const scale = useRef(new Animated.Value(1)).current;
     return (
         <Animated.View style={{ transform: [{ scale }], width: CARD_WIDTH }}>
@@ -144,7 +145,7 @@ const ProductCard = ({ item, colors, gradients, onPress }) => {
                 </View>
                 <TouchableOpacity
                     style={[styles.addBtn, { borderTopColor: colors.border }]}
-                    onPress={() => Alert.alert('Added!', `${item.name} added to cart`)}
+                    onPress={() => onAddToCart(item)}
                     activeOpacity={0.8}
                 >
                     <LinearGradient colors={gradients.button} style={styles.addBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
@@ -212,6 +213,7 @@ const EmptyState = ({ query, colors }) => (
 // ─── Main Screen ───────────────────────────────────────────────────────────
 const ExploreScreen = ({ navigation }) => {
     const { colors, gradients, isDark } = useTheme();
+    const { addToCart } = useCart();
 
     const [query, setQuery] = useState('');
     const [isFocused, setIsFocused] = useState(false);
@@ -305,7 +307,12 @@ const ExploreScreen = ({ navigation }) => {
     const isSearching = query.trim().length > 0 || selectedCategory !== 'all';
     const showEmpty = isSearching && filteredProducts.length === 0;
 
-    const goToDetail = () => navigation.navigate('Home', { screen: 'ProductDetail', params: { product: PRODUCT_DETAIL } });
+    const goToDetail = (product) => navigation.navigate('Home', { screen: 'ProductDetail', params: { product: product || PRODUCT_DETAIL } });
+
+    const handleAddToCart = (item) => {
+        addToCart(item, 1);
+        Alert.alert('✅ Added!', `${item.name} added to your bag`);
+    };
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -485,7 +492,8 @@ const ExploreScreen = ({ navigation }) => {
                             item={item}
                             colors={colors}
                             gradients={gradients}
-                            onPress={goToDetail}
+                            onPress={() => goToDetail(item)}
+                            onAddToCart={handleAddToCart}
                         />
                     )}
                     ListFooterComponent={<View style={{ height: 90 }} />}

@@ -31,6 +31,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import useTheme from '../../hooks/useTheme';
 import { useToast } from '../../components/ToastNotification';
+import { useCart } from '../../context/CartContext';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 48) / 2;
@@ -386,11 +387,11 @@ const EmptyState = ({ colors, gradients, onExplore }) => (
 const SavedScreen = ({ navigation }) => {
     const { colors, gradients, isDark } = useTheme();
     const { showToast, ToastComponent } = useToast();
+    const { addToCart } = useCart();
     const [wishlist, setWishlist] = useState(INITIAL_WISHLIST);
     const [viewMode, setViewMode] = useState('grid');   // 'grid' | 'list'
     const [sortBy, setSortBy] = useState('recent');
     const [showSort, setShowSort] = useState(false);
-    const [cartCount, setCartCount] = useState(0);
 
     // Sort logic
     const sortedWishlist = React.useMemo(() => {
@@ -408,17 +409,18 @@ const SavedScreen = ({ navigation }) => {
     }, []);
 
     const handleAddToCart = useCallback((item) => {
-        setCartCount((c) => c + 1);
+        addToCart(item, 1);
         showToast({
             type: 'cart',
             title: 'Added to Cart!',
             message: `${item.name} added to your Gudkart bag 🛍️`,
             duration: 2800,
         });
-    }, [showToast]);
+    }, [showToast, addToCart]);
 
     const handleMoveAllToCart = () => {
-        const inStockCount = wishlist.filter((i) => i.inStock).length;
+        const inStockItems = wishlist.filter((i) => i.inStock);
+        const inStockCount = inStockItems.length;
         if (inStockCount === 0) {
             showToast({
                 type: 'warning',
@@ -435,7 +437,7 @@ const SavedScreen = ({ navigation }) => {
             confirmLabel: 'Move All 🛍️',
             cancelLabel: 'Not now',
             onConfirm: () => {
-                setCartCount((c) => c + inStockCount);
+                inStockItems.forEach(item => addToCart(item, 1));
                 showToast({
                     type: 'success',
                     title: 'Done! 🎉',

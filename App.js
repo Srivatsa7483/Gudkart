@@ -11,6 +11,7 @@ import { store, persistor } from './src/store/store';
 import AppNavigator from './src/navigation/AppNavigator';
 import { AuthProvider } from './src/context/AuthContext';
 import { NotificationProvider } from './src/context/NotificationContext';
+import { CartProvider } from './src/context/CartContext';
 
 const LoadingFallback = () => (
     <View style={{ flex: 1, backgroundColor: '#0D0B1E', alignItems: 'center', justifyContent: 'center' }}>
@@ -26,7 +27,9 @@ export default function App() {
                     <PersistGate loading={<LoadingFallback />} persistor={persistor}>
                         <AuthProvider>
                             <NotificationProvider>
-                                <AppNavigator />
+                                <CartProvider>
+                                    <AppNavigator />
+                                </CartProvider>
                             </NotificationProvider>
                         </AuthProvider>
                     </PersistGate>
