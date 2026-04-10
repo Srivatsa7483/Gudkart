@@ -1,67 +1,115 @@
-import React, { useState } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView,
-    TouchableOpacity, Alert,
+    TouchableOpacity, Alert, ActivityIndicator,
+    TextInput, NativeModules, LayoutAnimation, UIManager, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from '../../components/SafeLinearGradient';
 import { Ionicons } from '@expo/vector-icons';
 import useTheme from '../../hooks/useTheme';
-import { useCart } from '../../context/CartContext'; // ✅ To clear cart after order
+import { useCart } from '../../context/CartContext';
+import { useAuth } from '../../context/AuthContext';
+import orderService from '../../services/api/orderService';
+import addressService from '../../services/api/addressService.js';
+import paymentService from '../../services/api/paymentService'; // New service
+import RazorpayCheckout from 'react-native-razorpay';
 
 const CheckoutScreen = ({ navigation, route }) => {
     const { colors, gradients, isDark } = useTheme();
-    const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
+    const insets = useSafeAreaInsets();
+    const styles = React.useMemo(
+        () => getStyles(colors, isDark, insets),
+        [colors, isDark, insets]
+    );
     const { clearCart } = useCart();
+    const { user } = useAuth();
 
-    // ✅ Receive real data from CartScreen
+    // ── Data from CartScreen or Buy Now ────────────────────────────────────
     const {
         cartTotal = 0,
         cartItems = [],
-        itemCount = 0,
         savings = 0,
     } = route.params || {};
 
-    const [selectedAddress, setSelectedAddress] = useState('1');
-    const [selectedPayment, setSelectedPayment] = useState('cod');
+    // itemCount: total quantity across all cart items (not just distinct products)
+    const itemCount = cartItems.reduce((sum, item) => sum + (item.quantity || 1), 0);
 
-    // Mock addresses — replace with addresses from API/context
-    const [addresses, setAddresses] = useState([
-        {
-            id: '1',
-            name: 'Rahul Kumar',
-            phone: '+91 9876543210',
-            address: 'Flat 402, Green Valley Apartments',
-            landmark: 'Near City Hospital',
-            city: 'Bengaluru',
-            state: 'Karnataka',
-            pincode: '560001',
-            isDefault: true,
-        },
-        {
-            id: '2',
-            name: 'Rahul Kumar',
-            phone: '+91 9876543210',
-            address: '23, MG Road',
-            landmark: 'Opposite Metro Station',
-            city: 'Bengaluru',
-            state: 'Karnataka',
-            pincode: '560002',
-            isDefault: false,
-        },
-    ]);
+    // ── State ───────────────────────────────────────────────────────────────
+    const [addresses, setAddresses] = useState([]);
+    const [selectedAddress, setSelectedAddress] = useState(null);
+    const [selectedPayment, setSelectedPayment] = useState('cod');
+    const [isLoadingAddresses, setIsLoadingAddresses] = useState(true);
+    const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+
+    // ── GST & Billing States ────────────────────────────────────────────────
+    const [useForBilling, setUseForBilling] = useState(true);
+    const [saveShipping, setSaveShipping] = useState(true);
+    const [isGSTEnabled, setIsGSTEnabled] = useState(false);
+    const [gstNumber, setGstNumber] = useState('');
 
     const paymentMethods = [
         { id: 'cod', name: 'Cash on Delivery', icon: 'cash-outline', subtitle: 'Pay when you receive' },
-        { id: 'upi', name: 'UPI', icon: 'phone-portrait-outline', subtitle: 'PhonePe, Google Pay, Paytm' },
-        { id: 'card', name: 'Credit / Debit Card', icon: 'card-outline', subtitle: 'Visa, Mastercard, Rupay' },
-        { id: 'netbanking', name: 'Net Banking', icon: 'business-outline', subtitle: 'All major banks' },
+        { id: 'upi', name: 'Pay Online', icon: 'phone-portrait-outline', subtitle: 'Cards, UPI, Netbanking, Wallets' },
+
     ];
 
-    const deliveryFee = cartTotal > 5000 ? 0 : 49;
-    const total = cartTotal + deliveryFee;
+    // ── Platform Fee Breakdown (percentages of cartTotal) ──────────────────
+    const [showPlatformDetails, setShowPlatformDetails] = useState(false);
+    const pf = {
+        digitalSecurityFee:    parseFloat((cartTotal * 1.2 / 100).toFixed(2)),
+        merchantVerification:  parseFloat((cartTotal * 1.0 / 100).toFixed(2)),
+        transitCare:           parseFloat((cartTotal * 0.8 / 100).toFixed(2)),
+        platformMaintenance:   parseFloat((cartTotal * 0.5 / 100).toFixed(2)),
+        qualityHandling:       parseFloat((cartTotal * 0.0 / 100).toFixed(2)),
+    };
+    const subPlatformFee   = parseFloat(Object.values(pf).reduce((s, v) => s + v, 0).toFixed(2));
+    const platformGST      = parseFloat((subPlatformFee * 0.18).toFixed(2));
+    const totalPlatformFee = parseFloat((subPlatformFee + platformGST).toFixed(2));
+    const deliveryFee      = cartTotal > 5000 ? 0 : 49;
+    const total            = parseFloat((cartTotal + deliveryFee + totalPlatformFee).toFixed(2));
+    const originalPrice    = cartTotal + savings; // before discount
 
-    // ✅ FIXED: Navigate to OrderSuccessScreen after placing order
+    const togglePlatformDetails = () => {
+        if (Platform.OS === 'android') UIManager.setLayoutAnimationEnabledExperimental?.(true);
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setShowPlatformDetails(v => !v);
+    };
+
+    // ── Load addresses from backend on mount ────────────────────────────────
+    useEffect(() => {
+        fetchAddresses();
+    }, []);
+
+    // ── Re-fetch addresses when returning from AddAddress screen ─────────────
+    useEffect(() => {
+        const refreshTimestamp = route.params?.addressRefresh;
+        if (refreshTimestamp) {
+            fetchAddresses();
+        }
+    }, [route.params?.addressRefresh]);
+
+    const fetchAddresses = async () => {
+        if (!user?.uid) return;
+        setIsLoadingAddresses(true);
+        try {
+            const data = await addressService.getAddresses(user.uid);
+            const list = data?.addresses || data || [];
+            setAddresses(list);
+            // Auto-select the default address, or the first one
+            const defaultAddr = list.find(a => a.isDefault) || list[0];
+            if (defaultAddr) {
+                setSelectedAddress(defaultAddr.id || defaultAddr._id);
+            }
+        } catch (error) {
+            console.error('Failed to load addresses:', error);
+            Alert.alert('Error', 'Could not load your saved addresses. You can add a new one.');
+        } finally {
+            setIsLoadingAddresses(false);
+        }
+    };
+
+    // ── Place Order — calls orderService ────────────────────────────────────
     const handlePlaceOrder = () => {
         if (!selectedAddress) {
             Alert.alert('Address Required', 'Please select a delivery address');
@@ -72,51 +120,195 @@ const CheckoutScreen = ({ navigation, route }) => {
             return;
         }
 
-        Alert.alert(
-            'Confirm Order',
-            'Are you sure you want to place this order?',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Place Order',
-                    onPress: () => {
-                        const orderId = '#ORD' + Date.now().toString().slice(-8);
-                        clearCart(); // ✅ Clear cart after order
-                        navigation.navigate('OrderSuccess', {
-                            orderId,
-                            total: total.toLocaleString(),
-                        });
-                    },
-                },
-            ]
-        );
+        if (selectedPayment === 'upi') {
+            // Razorpay: skip confirmation dialog and open payment sheet immediately
+            placeOrderOnServer();
+        } else {
+            // COD: show confirmation before placing
+            Alert.alert(
+                'Confirm Order',
+                'Are you sure you want to place this order?',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Place Order', onPress: placeOrderOnServer },
+                ]
+            );
+        }
     };
 
-    // ✅ Add New Address — navigates to AddAddress screen (create that screen next)
+    const placeOrderOnServer = async () => {
+        setIsPlacingOrder(true);
+        try {
+            // Find the full address object
+            const address = addresses.find(
+                a => (a.id || a._id) === selectedAddress
+            );
+
+            // 1. Prepare Customer & Order Info
+            const customerInfo = {
+                firstName: address?.firstName || '',
+                lastName: address?.lastName || '',
+                email: user?.email || '',
+                phone: address?.phone || '',
+                gstNumber: isGSTEnabled ? gstNumber.trim() : null,
+                shippingAddress: {
+                    name: [address?.firstName, address?.lastName].filter(Boolean).join(' ') || address?.name || '',
+                    addressLine: address?.addressLine || address?.address || '',
+                    landmark: address?.landmark || '',
+                    city: address?.city || '',
+                    state: address?.state || '',
+                    pincode: address?.pincode || '',
+                    phone: address?.phone || '',
+                },
+                billingAddress: useForBilling ? {
+                    name: [address?.firstName, address?.lastName].filter(Boolean).join(' ') || address?.name || '',
+                    addressLine: address?.addressLine || address?.address || '',
+                    landmark: address?.landmark || '',
+                    city: address?.city || '',
+                    state: address?.state || '',
+                    pincode: address?.pincode || '',
+                    phone: address?.phone || '',
+                } : null
+            };
+
+            const platformFeeBreakdown = {
+                digitalSecurityFee: 1.2,
+                merchantVerification: 1.0,
+                transitCare: 0.8,
+                platformMaintenance: 0.5,
+                qualityHandling: 0.0
+            };
+
+            const mappedCartItems = cartItems.map(item => ({
+                productId: item.id,
+                name: item.title || item.name,
+                price: item.price,
+                quantity: item.quantity,
+                variant: item.color || item.size || null,
+                size: item.size || null,
+                image: item.image || null,
+                sellerId: item.sellerId || null,
+            }));
+
+            // 2. Handle specific payment flows
+            if (selectedPayment === 'cod') {
+                const response = await paymentService.placeCODOrder({
+                    uid: user.uid,
+                    cartItems: mappedCartItems,
+                    customerInfo,
+                    amount: total,
+                    platformFeeBreakdown,
+                    couponDiscount: savings || 0,
+                });
+                handleOrderSuccess(response);
+            } else if (selectedPayment === 'upi') {
+                // START RAZORPAY FLOW
+                try {
+                    // Robust check: detect if native module exists in NativeModules, as 
+                    // the JS wrapper might bypass simple null checks in some environments
+                    const isModuleAvailable = !!NativeModules.RazorpayCheckout || (!!RazorpayCheckout && typeof RazorpayCheckout.open === 'function');
+
+                    if (!isModuleAvailable) {
+                        throw new Error("Razorpay native module not found. Native payments are not supported in Expo Go. Please use a Development Client build (npx expo run:android).");
+                    }
+
+                    const orderResp = await paymentService.createRazorpayOrder(total, mappedCartItems, customerInfo);
+
+                    if (!orderResp.success) throw new Error("Failed to initialize payment");
+
+                    const options = {
+                        description: 'Order Payment',
+                        image: 'https://gudkart.com/logo.png', // Fallback logo
+                        currency: orderResp.order.currency,
+                        key: orderResp.key_id,
+                        amount: orderResp.order.amount,
+                        name: 'GudKart',
+                        order_id: orderResp.order.id,
+                        prefill: {
+                            email: user.email,
+                            contact: address?.phone || '',
+                            name: `${address?.firstName || ''} ${address?.lastName || ''}`.trim()
+                        },
+                        theme: { color: colors.accent || '#7B5EEA' }
+                    };
+
+                    RazorpayCheckout.open(options).then(async (data) => {
+                        // Payment successful, now verify on backend
+                        try {
+                            const verifyResp = await paymentService.verifyPayment({
+                                razorpay_payment_id: data.razorpay_payment_id,
+                                razorpay_order_id: data.razorpay_order_id,
+                                razorpay_signature: data.razorpay_signature,
+                                cartItems: mappedCartItems,
+                                customerInfo,
+                                amount: total,
+                                uid: user.uid,
+                                platformFeeBreakdown,
+                                couponDiscount: savings || 0
+                            });
+                            handleOrderSuccess(verifyResp);
+                        } catch (err) {
+                            console.error('Payment Verification Error:', err);
+                            Alert.alert("Verification Failed", "Payment was successful but verification failed. Please contact support.");
+                            setIsPlacingOrder(false);
+                        }
+                    }).catch((error) => {
+                        // Payment failed or cancelled
+                        console.error('Razorpay SDK Error:', error);
+                        const errorCode = error?.code || 'CANCELLED';
+                        const errorDesc = error?.description || error?.message || 'Payment process was interrupted.';
+
+                        console.log(`Error: ${errorCode} | ${errorDesc}`);
+                        Alert.alert('Payment Cancelled', errorDesc);
+                        setIsPlacingOrder(false);
+                    });
+                } catch (razorInitError) {
+                    console.error('Razorpay Init Error:', razorInitError);
+                    Alert.alert('Payment Error', razorInitError.message);
+                    setIsPlacingOrder(false);
+                }
+            }
+        } catch (error) {
+            console.error('Order placement failed:', error);
+            const message = error?.response?.data?.message || error?.message || 'Something went wrong. Please try again.';
+            Alert.alert('Order Failed', message);
+            setIsPlacingOrder(false);
+        }
+    };
+
+    const handleOrderSuccess = (response) => {
+        clearCart();
+        setIsPlacingOrder(false);
+        navigation.replace('OrderSuccess', {
+            orderId: response?.orderId || '#ORD' + Date.now().toString().slice(-8),
+            total: total.toLocaleString(),
+            items: itemCount,
+        });
+    };
+
+    // ── Add / Edit address via backend ──────────────────────────────────────
     const handleAddAddress = () => {
+        // Pass a callback key so AddAddressScreen can signal back via setParams
         navigation.navigate('AddAddress', {
-            onAddressAdded: (newAddress) => {
-                setAddresses(prev => [...prev, { ...newAddress, id: Date.now().toString() }]);
-            },
+            returnScreen: 'Checkout',
         });
     };
 
     const handleEditAddress = (address) => {
         navigation.navigate('AddAddress', {
             addressToEdit: address,
-            onAddressAdded: (updatedAddress) => {
-                setAddresses(prev => prev.map(a => a.id === updatedAddress.id ? updatedAddress : a));
-            },
+            returnScreen: 'Checkout',
         });
     };
 
-    // ─── Address Card ─────────────────────────────────────────────────────────
+    // ── Address Card ────────────────────────────────────────────────────────
     const AddressCard = ({ address }) => {
-        const isSelected = selectedAddress === address.id;
+        const addrId = address.id || address._id;
+        const isSelected = selectedAddress === addrId;
         return (
             <TouchableOpacity
                 style={[styles.addressCard, isSelected && styles.addressCardSelected]}
-                onPress={() => setSelectedAddress(address.id)}
+                onPress={() => setSelectedAddress(addrId)}
                 activeOpacity={0.85}
             >
                 <View style={styles.addressHeader}>
@@ -125,7 +317,9 @@ const CheckoutScreen = ({ navigation, route }) => {
                     </View>
                     <View style={styles.addressInfo}>
                         <View style={styles.addressNameRow}>
-                            <Text style={styles.addressName}>{address.name}</Text>
+                            <Text style={styles.addressName}>
+                                {[address.firstName, address.lastName].filter(Boolean).join(' ') || address.name || ''}
+                            </Text>
                             {address.isDefault && (
                                 <View style={styles.defaultBadge}>
                                     <Text style={styles.defaultText}>Default</Text>
@@ -134,7 +328,7 @@ const CheckoutScreen = ({ navigation, route }) => {
                         </View>
                         <Text style={styles.addressPhone}>{address.phone}</Text>
                     </View>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.editButton}
                         onPress={() => handleEditAddress(address)}
                     >
@@ -142,14 +336,19 @@ const CheckoutScreen = ({ navigation, route }) => {
                     </TouchableOpacity>
                 </View>
                 <View style={styles.addressBody}>
-                    <Text style={styles.addressText}>{address.address}, {address.landmark}</Text>
-                    <Text style={styles.addressText}>{address.city}, {address.state} — {address.pincode}</Text>
+                    <Text style={styles.addressText}>
+                        {address.addressLine || address.address || ''}
+                        {address.landmark ? `, ${address.landmark}` : ''}
+                    </Text>
+                    <Text style={styles.addressText}>
+                        {address.city}, {address.state} — {address.pincode}
+                    </Text>
                 </View>
             </TouchableOpacity>
         );
     };
 
-    // ─── Payment Method Card ──────────────────────────────────────────────────
+    // ── Payment Method Card ─────────────────────────────────────────────────
     const PaymentMethodCard = ({ method }) => {
         const isSelected = selectedPayment === method.id;
         return (
@@ -173,9 +372,9 @@ const CheckoutScreen = ({ navigation, route }) => {
         );
     };
 
-    // ─── Render ───────────────────────────────────────────────────────────────
+    // ── Render ──────────────────────────────────────────────────────────────
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
             <LinearGradient colors={isDark ? ['#1A0B2E', '#2E1A47'] : [colors.background, colors.surface]} style={styles.gradient}>
 
                 {/* Header */}
@@ -188,7 +387,10 @@ const CheckoutScreen = ({ navigation, route }) => {
                 </View>
 
                 {/* Scrollable Content */}
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}>
+                <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.scrollContent}
+                >
 
                     {/* ── Section: Delivery Address ── */}
                     <View style={styles.section}>
@@ -197,13 +399,105 @@ const CheckoutScreen = ({ navigation, route }) => {
                                 <Ionicons name="location" size={22} color={colors.accent} />
                                 <Text style={styles.sectionTitle}>Delivery Address</Text>
                             </View>
-                            {/* ✅ FIXED: Add New navigates to AddAddress screen */}
                             <TouchableOpacity style={styles.addButton} onPress={handleAddAddress}>
                                 <Ionicons name="add-circle-outline" size={20} color={colors.accent} />
                                 <Text style={styles.addButtonText}>Add New</Text>
                             </TouchableOpacity>
                         </View>
-                        {addresses.map(addr => <AddressCard key={addr.id} address={addr} />)}
+
+                        {isLoadingAddresses ? (
+                            <View style={styles.loadingContainer}>
+                                <ActivityIndicator size="small" color={colors.accent} />
+                                <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading addresses…</Text>
+                            </View>
+                        ) : addresses.length === 0 ? (
+                            <TouchableOpacity style={styles.emptyAddressCard} onPress={handleAddAddress}>
+                                <Ionicons name="add-circle-outline" size={32} color={colors.accent} />
+                                <Text style={[styles.emptyAddressText, { color: colors.textSecondary }]}>
+                                    No saved addresses. Tap to add one.
+                                </Text>
+                            </TouchableOpacity>
+                        ) : (
+                            addresses.map(addr => (
+                                <AddressCard key={addr.id || addr._id} address={addr} />
+                            ))
+                        )}
+
+                        {/* ── Additional Address Toggles ── */}
+                        <View style={styles.addressToggles}>
+                            <TouchableOpacity
+                                style={styles.toggleRow}
+                                onPress={() => setUseForBilling(!useForBilling)}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons
+                                    name={useForBilling ? "checkbox" : "square-outline"}
+                                    size={22}
+                                    color={useForBilling ? colors.success : colors.textMuted}
+                                />
+                                <View style={styles.toggleTextContainer}>
+                                    <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Use this address for billing too</Text>
+                                    <Text style={[styles.toggleSublabel, { color: colors.textMuted }]}>(Uncheck to add a different billing address)</Text>
+                                </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.toggleRow}
+                                onPress={() => setSaveShipping(!saveShipping)}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons
+                                    name={saveShipping ? "checkbox" : "square-outline"}
+                                    size={22}
+                                    color={saveShipping ? colors.success : colors.textMuted}
+                                />
+                                <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Save this shipping address for future orders</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* ── GST Section ── */}
+                        <View style={[styles.gstCard, { backgroundColor: isDark ? 'rgba(96, 165, 250, 0.05)' : '#F3F8FF', borderColor: '#BFDBFE' }]}>
+                            <TouchableOpacity
+                                style={styles.gstHeader}
+                                onPress={() => setIsGSTEnabled(!isGSTEnabled)}
+                                activeOpacity={0.7}
+                            >
+                                <View style={styles.gstIconContainer}>
+                                    <Ionicons name="document-text" size={24} color="#3B82F6" />
+                                </View>
+                                <View style={styles.gstTitleRow}>
+                                    <Ionicons
+                                        name={isGSTEnabled ? "checkbox" : "square-outline"}
+                                        size={22}
+                                        color={isGSTEnabled ? "#3B82F6" : colors.textMuted}
+                                    />
+                                    <View style={{ flex: 1, marginLeft: 8 }}>
+                                        <Text style={[styles.gstTitle, { color: colors.textPrimary }]}>I have a GST Number</Text>
+                                        <Text style={[styles.gstSub, { color: colors.textMuted }]}>Add your GST number for business purchases (optional)</Text>
+                                    </View>
+                                </View>
+                            </TouchableOpacity>
+
+                            {isGSTEnabled && (
+                                <View style={styles.gstInputContainer}>
+                                    <TextInput
+                                        style={[styles.gstInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.textPrimary }]}
+                                        placeholder="Enter GST Number (e.g., 29ABCDE1234F1Z5)"
+                                        placeholderTextColor={colors.textMuted}
+                                        value={gstNumber}
+                                        onChangeText={setGstNumber}
+                                        autoCapitalize="characters"
+                                        maxLength={15}
+                                    />
+                                    <View style={[styles.gstHintContainer, { backgroundColor: '#E0F2FE' }]}>
+                                        <Text style={styles.gstHintText}>
+                                            <Text style={{ fontWeight: 'bold', color: '#1E40AF' }}>Format: </Text>
+                                            <Text style={{ color: '#1E40AF' }}>2 digits (state code) + 5 letters (PAN) + 4 digits + 1 letter + 1 letter/digit + Z + 1 letter/digit</Text>
+                                        </Text>
+                                    </View>
+                                </View>
+                            )}
+                        </View>
                     </View>
 
                     {/* ── Section: Payment Method ── */}
@@ -226,34 +520,103 @@ const CheckoutScreen = ({ navigation, route }) => {
                             </View>
                         </View>
 
-                        <View style={styles.summaryCard}>
+                        <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+
+                            {/* Product Pricing row — original strikethrough + discounted */}
                             <View style={styles.summaryRow}>
-                                <Text style={styles.summaryLabel}>Items ({itemCount})</Text>
-                                <Text style={styles.summaryValue}>₹{cartTotal.toLocaleString()}</Text>
+                                <Text style={styles.summaryLabel}>Product Pricing *</Text>
+                                <View style={styles.priceStack}>
+                                    {savings > 0 && (
+                                        <Text style={styles.origPrice}>₹{originalPrice.toLocaleString('en-IN')}</Text>
+                                    )}
+                                    <Text style={styles.discPrice}>₹{cartTotal.toLocaleString('en-IN')}</Text>
+                                </View>
                             </View>
-                            {savings > 0 && (
-                                <View style={styles.summaryRow}>
-                                    <Text style={[styles.summaryLabel, { color: '#00D97E' }]}>Discount</Text>
-                                    <Text style={[styles.summaryValue, { color: '#00D97E' }]}>-₹{savings.toLocaleString()}</Text>
+
+                            <View style={styles.thinDivider} />
+
+                            {/* Platform Fee row — tappable dropdown */}
+                            <TouchableOpacity
+                                style={styles.summaryRow}
+                                onPress={togglePlatformDetails}
+                                activeOpacity={0.7}
+                            >
+                                <View style={styles.pfLabelRow}>
+                                    <Text style={styles.summaryLabel}>Platform Fee & Service GST</Text>
+                                    <Ionicons
+                                        name={showPlatformDetails ? 'chevron-up' : 'chevron-down'}
+                                        size={14}
+                                        color={colors.textMuted}
+                                        style={{ marginLeft: 4, marginTop: 1 }}
+                                    />
+                                </View>
+                                <Text style={styles.summaryValue}>₹{totalPlatformFee.toLocaleString('en-IN')}</Text>
+                            </TouchableOpacity>
+
+                            {/* Collapsible breakdown */}
+                            {showPlatformDetails && (
+                                <View style={[styles.pfBreakdownBox, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#F8F9FB', borderColor: colors.border }]}>
+                                    <Text style={[styles.pfBreakdownHeader, { color: colors.textMuted }]}>SERVICE BREAKDOWN</Text>
+                                    {[
+                                        { label: 'Digital Security Fee',  value: pf.digitalSecurityFee },
+                                        { label: 'Merchant Verification', value: pf.merchantVerification },
+                                        { label: 'Transit Care',          value: pf.transitCare },
+                                        { label: 'Platform Maintenance',  value: pf.platformMaintenance },
+                                        { label: 'Quality & Handling',    value: pf.qualityHandling },
+                                    ].map(({ label, value }) => (
+                                        <View key={label} style={styles.pfRow}>
+                                            <Text style={[styles.pfLabel, { color: colors.textSecondary }]}>{label}</Text>
+                                            <Text style={[styles.pfValue, { color: colors.textPrimary }]}>₹{value.toLocaleString('en-IN')}</Text>
+                                        </View>
+                                    ))}
+                                    <View style={styles.thinDivider} />
+                                    <View style={styles.pfRow}>
+                                        <Text style={[styles.pfLabel, styles.pfGstLabel, { color: colors.textSecondary }]}>GST (18% on Platform Fee)</Text>
+                                        <Text style={[styles.pfValue, { color: colors.textPrimary }]}>₹{platformGST.toLocaleString('en-IN')}</Text>
+                                    </View>
                                 </View>
                             )}
+
+                            <View style={styles.thinDivider} />
+
+                            {/* Shipping */}
                             <View style={styles.summaryRow}>
-                                <Text style={styles.summaryLabel}>Delivery</Text>
+                                <Text style={styles.summaryLabel}>Shipping Fee</Text>
                                 {deliveryFee === 0
                                     ? <Text style={styles.freeDelivery}>FREE</Text>
                                     : <Text style={styles.summaryValue}>₹{deliveryFee}</Text>}
                             </View>
-                            <View style={styles.divider} />
+
+                            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+                            {/* Total Amount */}
                             <View style={styles.summaryRow}>
-                                <Text style={styles.totalLabel}>Total Payable</Text>
-                                <Text style={styles.totalValue}>₹{total.toLocaleString()}</Text>
+                                <Text style={styles.totalLabel}>Total Amount</Text>
+                                <Text style={[styles.totalValue, { color: '#1D72E8' }]}>₹{total.toLocaleString('en-IN')}</Text>
                             </View>
-                            {savings > 0 && (
-                                <View style={styles.savingsInfo}>
-                                    <Ionicons name="pricetag-outline" size={16} color="#00D97E" />
-                                    <Text style={styles.savingsText}>You save ₹{savings.toLocaleString()} on this order!</Text>
-                                </View>
-                            )}
+
+                            {/* Save with Gudkart Premium */}
+                            <TouchableOpacity activeOpacity={0.8} style={styles.premiumBadge}>
+                                <Text style={styles.premiumText}>SAVE WITH GUDKART PREMIUM</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* GST note */}
+                        <View style={[styles.noteCard, { backgroundColor: isDark ? 'rgba(29,114,232,0.10)' : '#EBF3FF', borderColor: '#1D72E8' + '30' }]}>
+                            <Text style={[styles.noteText, { color: isDark ? '#7EB6FF' : '#1D72E8' }]}>
+                                <Text style={{ fontWeight: '700' }}>* Product Pricing</Text> includes GST on products
+                            </Text>
+                        </View>
+
+                        {/* Guaranteed Safety card */}
+                        <View style={[styles.safetyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                            <View style={[styles.safetyIcon, { backgroundColor: isDark ? 'rgba(29,114,232,0.15)' : '#EBF3FF' }]}>
+                                <Ionicons name="shield-checkmark-outline" size={22} color="#1D72E8" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.safetyTitle, { color: colors.textPrimary }]}>Guaranteed Safety</Text>
+                                <Text style={[styles.safetySub, { color: colors.textMuted }]}>100% Secure Transaction</Text>
+                            </View>
                         </View>
                     </View>
 
@@ -270,11 +633,21 @@ const CheckoutScreen = ({ navigation, route }) => {
                                 <Text style={styles.bottomLabel}>Total Payable</Text>
                                 <Text style={styles.bottomTotal}>₹{total.toLocaleString()}</Text>
                             </View>
-                            {/* ✅ FIXED: Navigates to OrderSuccessScreen */}
-                            <TouchableOpacity style={styles.placeOrderButton} onPress={handlePlaceOrder} activeOpacity={0.85}>
-                                <LinearGradient colors={gradients.button} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.placeOrderGradient}>
-                                    <Text style={styles.placeOrderText}>Place Order</Text>
-                                    <Ionicons name="checkmark-circle-outline" size={20} color={isDark ? '#1A0B2E' : '#fff'} />
+                            <TouchableOpacity
+                                style={[styles.placeOrderButton, isPlacingOrder && { opacity: 0.6 }]}
+                                onPress={handlePlaceOrder}
+                                activeOpacity={0.85}
+                                disabled={isPlacingOrder}
+                            >
+                                <LinearGradient colors={(gradients?.button || []).every(Boolean) ? gradients.button : ['#7B5EEA', '#5A3EC8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.placeOrderGradient}>
+                                    {isPlacingOrder ? (
+                                        <ActivityIndicator size="small" color={isDark ? '#1A0B2E' : '#fff'} />
+                                    ) : (
+                                        <>
+                                            <Text style={styles.placeOrderText}>Place Order</Text>
+                                            <Ionicons name="checkmark-circle-outline" size={20} color={isDark ? '#1A0B2E' : '#fff'} />
+                                        </>
+                                    )}
                                 </LinearGradient>
                             </TouchableOpacity>
                         </View>
@@ -286,9 +659,13 @@ const CheckoutScreen = ({ navigation, route }) => {
     );
 };
 
-const getStyles = (colors, isDark) => StyleSheet.create({
+const getStyles = (colors, isDark, insets) => StyleSheet.create({
     container: { flex: 1 },
     gradient: { flex: 1 },
+
+    // ScrollView content — clears the absolute bottom bar on every device
+    // bottomBar = paddingTop(16) + btn(52) + paddingBottom(dynamic) = ~68 + insets.bottom
+    scrollContent: { paddingBottom: 84 + (insets?.bottom || 0) },
 
     header: {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -310,6 +687,20 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     sectionTitle: { fontSize: 18, fontWeight: 'bold', color: colors.textPrimary, marginLeft: 8 },
     addButton: { flexDirection: 'row', alignItems: 'center' },
     addButtonText: { fontSize: 14, color: colors.accent, marginLeft: 4, fontWeight: '600' },
+
+    // Loading & empty states for addresses
+    loadingContainer: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        paddingVertical: 24,
+    },
+    loadingText: { marginLeft: 8, fontSize: 14 },
+    emptyAddressCard: {
+        alignItems: 'center', justifyContent: 'center',
+        backgroundColor: colors.surface, marginHorizontal: 16,
+        borderRadius: 12, padding: 24, borderWidth: 2,
+        borderColor: colors.border, borderStyle: 'dashed',
+    },
+    emptyAddressText: { marginTop: 8, fontSize: 14, textAlign: 'center' },
 
     // Address
     addressCard: {
@@ -350,26 +741,58 @@ const getStyles = (colors, isDark) => StyleSheet.create({
 
     // Summary
     summaryCard: {
-        backgroundColor: colors.surface, marginHorizontal: 16,
-        borderRadius: 12, padding: 16, borderWidth: 1, borderColor: colors.border,
+        marginHorizontal: 16, borderRadius: 16, padding: 18,
+        borderWidth: 1, marginBottom: 10,
     },
-    summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+    summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
     summaryLabel: { fontSize: 15, color: colors.textSecondary },
     summaryValue: { fontSize: 15, color: colors.textPrimary, fontWeight: '500' },
-    freeDelivery: { color: '#00D97E', fontWeight: 'bold', fontSize: 15 },
-    divider: { height: 1, backgroundColor: colors.border, marginVertical: 8 },
-    totalLabel: { fontSize: 17, fontWeight: 'bold', color: colors.textPrimary },
-    totalValue: { fontSize: 18, fontWeight: 'bold', color: colors.accent },
+    freeDelivery: { color: '#00D97E', fontWeight: '800', fontSize: 15 },
+    thinDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginBottom: 14 },
+    divider: { height: 1, marginVertical: 6 },
+    totalLabel: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+    totalValue: { fontSize: 22, fontWeight: '900' },
     savingsInfo: {
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: 'rgba(0,217,126,0.1)', padding: 10, borderRadius: 8, marginTop: 8,
     },
     savingsText: { fontSize: 13, color: '#00D97E', marginLeft: 6, fontWeight: '600' },
 
-    // Bottom Bar
+    // Product Pricing
+    priceStack: { alignItems: 'flex-end', gap: 2 },
+    origPrice: { fontSize: 13, color: colors.textMuted, textDecorationLine: 'line-through' },
+    discPrice: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
+
+    // Platform Fee row
+    pfLabelRow: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },
+    pfBreakdownBox: { borderRadius: 10, borderWidth: 1, padding: 14, marginBottom: 14 },
+    pfBreakdownHeader: { fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 12 },
+    pfRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+    pfLabel: { fontSize: 14 },
+    pfGstLabel: { fontStyle: 'italic' },
+    pfValue: { fontSize: 14, fontWeight: '600' },
+
+    // Premium Badge
+    premiumBadge: { alignSelf: 'flex-start', marginTop: 4 },
+    premiumText: { fontSize: 11, fontWeight: '800', color: '#00D97E', letterSpacing: 0.5 },
+
+    // Note & Safety cards
+    noteCard: { marginHorizontal: 16, borderRadius: 10, borderWidth: 1, padding: 12, marginBottom: 10 },
+    noteText: { fontSize: 13, lineHeight: 18 },
+    safetyCard: { marginHorizontal: 16, borderRadius: 12, borderWidth: 1, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+    safetyIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+    safetyTitle: { fontSize: 15, fontWeight: '700' },
+    safetySub: { fontSize: 12, marginTop: 2 },
+
+    // Bottom Bar — position:absolute so it always overlays the scroll content
     bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0 },
     bottomGradient: {
-        paddingTop: 16, paddingBottom: 28, paddingHorizontal: 16,
+        paddingTop: 10,
+        // Dynamic bottom padding: SafeAreaView edges=['top','bottom'] handles the top notch
+        // but the bottom bar is position:absolute INSIDE the SafeAreaView, so we add
+        // insets.bottom manually here to clear gesture nav / home indicator
+        paddingBottom: 15,
+        paddingHorizontal: 16,
         borderTopLeftRadius: 24, borderTopRightRadius: 24,
         borderTopWidth: 1, borderColor: colors.border,
     },
@@ -382,6 +805,34 @@ const getStyles = (colors, isDark) => StyleSheet.create({
         justifyContent: 'center', paddingVertical: 16, gap: 8,
     },
     placeOrderText: { fontSize: 16, fontWeight: 'bold', color: isDark ? '#1A0B2E' : '#fff' },
+
+    // GST & Address Toggles
+    addressToggles: { marginHorizontal: 16, marginTop: 8, gap: 12 },
+    toggleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+    toggleTextContainer: { flex: 1 },
+    toggleLabel: { fontSize: 14, fontWeight: '500' },
+    toggleSublabel: { fontSize: 12, marginTop: 2 },
+
+    gstCard: {
+        marginHorizontal: 16, marginTop: 20, borderRadius: 16,
+        padding: 16, borderWidth: 1,
+    },
+    gstHeader: { flexDirection: 'row', alignItems: 'center' },
+    gstIconContainer: {
+        width: 32, height: 32, borderRadius: 8, backgroundColor: '#DBEAFE',
+        justifyContent: 'center', alignItems: 'center', marginRight: 12,
+    },
+    gstTitleRow: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+    gstTitle: { fontSize: 16, fontWeight: 'bold' },
+    gstSub: { fontSize: 13, marginTop: 2 },
+
+    gstInputContainer: { marginTop: 16 },
+    gstInput: {
+        height: 54, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16,
+        fontSize: 16, fontWeight: '500', marginBottom: 12,
+    },
+    gstHintContainer: { padding: 12, borderRadius: 10 },
+    gstHintText: { fontSize: 12, lineHeight: 18 },
 });
 
 export default CheckoutScreen;

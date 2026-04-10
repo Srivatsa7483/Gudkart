@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import {
     View,
     Text,
@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../../components/SafeLinearGradient';
 import useTheme from '../../hooks/useTheme';
 import { WALLET_TRANSACTIONS } from '../../data/mockData';
 

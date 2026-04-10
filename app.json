@@ -3,6 +3,7 @@
     "name": "GudCart",
     "slug": "gudcart",
     "version": "1.0.0",
+    "scheme": "gudcart",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -12,7 +13,12 @@
     "ios": {
       "supportsTablet": true
     },
-    "android": {},
-    "web": {}
+    "android": {
+      "package": "com.vinith_2005.gudcart"
+    },
+    "web": {},
+    "plugins": [
+      "expo-web-browser"
+    ]
   }
 }

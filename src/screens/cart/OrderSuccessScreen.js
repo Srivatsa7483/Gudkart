@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+﻿import React, { useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -8,7 +8,7 @@ import {
     Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../../components/SafeLinearGradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import useTheme from '../../hooks/useTheme';
 
@@ -16,7 +16,11 @@ const { width } = Dimensions.get('window');
 
 const OrderSuccessScreen = ({ navigation, route }) => {
     const { colors, gradients, isDark } = useTheme();
-    const { orderId = '#ORD' + Date.now().toString().slice(-8), total = '15,797' } = route.params || {};
+    const {
+        orderId = '#ORD' + Date.now().toString().slice(-8),
+        total = '0',
+        items = 0,
+    } = route.params || {};
 
     const scaleAnim = useRef(new Animated.Value(0)).current;
     const opacityAnim = useRef(new Animated.Value(0)).current;
@@ -52,8 +56,8 @@ const OrderSuccessScreen = ({ navigation, route }) => {
                 <View style={styles.content}>
                     {/* Success Icon */}
                     <Animated.View style={[
-                        styles.iconContainer, 
-                        { 
+                        styles.iconContainer,
+                        {
                             backgroundColor: colors.success + '20',
                             transform: [{ scale: scaleAnim }],
                             opacity: opacityAnim,
@@ -79,7 +83,7 @@ const OrderSuccessScreen = ({ navigation, route }) => {
 
                     {/* Order Details Card */}
                     <Animated.View style={[
-                        styles.orderCard, 
+                        styles.orderCard,
                         { backgroundColor: colors.surface, transform: [{ translateY: opacityAnim.interpolate({ inputRange: [0, 1], outputRange: [50, 0] }) }] }
                     ]}>
                         <View style={styles.cardRow}>
@@ -100,8 +104,8 @@ const OrderSuccessScreen = ({ navigation, route }) => {
 
                     {/* Action Buttons */}
                     <View style={styles.buttonGroup}>
-                        <TouchableOpacity 
-                            style={styles.primaryBtn} 
+                        <TouchableOpacity
+                            style={styles.primaryBtn}
                             onPress={handleTrack}
                             activeOpacity={0.8}
                         >
@@ -116,8 +120,8 @@ const OrderSuccessScreen = ({ navigation, route }) => {
                             </LinearGradient>
                         </TouchableOpacity>
 
-                        <TouchableOpacity 
-                            style={[styles.secondaryBtn, { borderColor: colors.border }]} 
+                        <TouchableOpacity
+                            style={[styles.secondaryBtn, { borderColor: colors.border }]}
                             onPress={handleContinue}
                             activeOpacity={0.7}
                         >
@@ -134,7 +138,7 @@ const styles = StyleSheet.create({
     container: { flex: 1 },
     safeArea: { flex: 1 },
     content: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 },
-    
+
     iconContainer: {
         width: 160, height: 160, borderRadius: 80,
         alignItems: 'center', justifyContent: 'center',
@@ -164,7 +168,7 @@ const styles = StyleSheet.create({
     buttonGroup: { width: '100%', gap: 12 },
     primaryBtn: { width: '100%', height: 60, borderRadius: 18, overflow: 'hidden' },
     btnGradient: {
-        flex: 1, flexDirection: 'row', alignItems: 'center', 
+        flex: 1, flexDirection: 'row', alignItems: 'center',
         justifyContent: 'center', gap: 10,
     },
     primaryBtnText: { fontSize: 17, fontWeight: '800' },

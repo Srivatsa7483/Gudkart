@@ -9,14 +9,15 @@ import {
     StatusBar,
     Alert,
     Platform,
-    SafeAreaView,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import useTheme from '../../hooks/useTheme';
 import { Ionicons } from '@expo/vector-icons';
 
 const SettingsScreen = ({ navigation }) => {
     const { colors, isDark, toggle: toggleTheme } = useTheme();
+    const insets = useSafeAreaInsets();
 
     const [notifications, setNotifications] = useState(true);
     const [dealAlerts, setDealAlerts] = useState(true);
@@ -70,19 +71,21 @@ const SettingsScreen = ({ navigation }) => {
             />
 
             {/* ── Header ── */}
-            <SafeAreaView style={{ backgroundColor: colors.surface }}>
-                <View style={[s.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                    <TouchableOpacity
-                        style={[s.backBtn, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}
-                        onPress={() => navigation.goBack()}
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
-                    </TouchableOpacity>
-                    <Text style={[s.headerTitle, { color: colors.textPrimary }]}>Settings</Text>
-                    <View style={{ width: 40 }} />
-                </View>
-            </SafeAreaView>
+            <View style={[s.header, { 
+                backgroundColor: colors.surface, 
+                borderBottomColor: colors.border,
+                paddingTop: insets.top + 8
+            }]}>
+                <TouchableOpacity
+                    style={[s.backBtn, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}
+                    onPress={() => navigation.goBack()}
+                    activeOpacity={0.7}
+                >
+                    <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+                </TouchableOpacity>
+                <Text style={[s.headerTitle, { color: colors.textPrimary }]}>Settings</Text>
+                <View style={{ width: 40 }} />
+            </View>
 
             <ScrollView
                 contentContainerStyle={s.scroll}
@@ -336,7 +339,6 @@ const s = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: 20,
-        paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 0) + 12,
         paddingBottom: 16,
         borderBottomWidth: 1,
     },

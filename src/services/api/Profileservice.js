@@ -1,4 +1,5 @@
 import apiClient from './apiClient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
  * Profile Service
@@ -39,10 +40,10 @@ const profileService = {
         try {
             const response = await apiClient.post(`/consumer/${uid}/profile`, profileData);
 
-            // Update local storage
-            const currentUser = JSON.parse(localStorage.getItem('userData') || '{}');
-            const updatedUser = { ...currentUser, ...response.data };
-            localStorage.setItem('userData', JSON.stringify(updatedUser));
+            // Update persisted user in AsyncStorage
+            const stored = await AsyncStorage.getItem('@auth_user');
+            const currentUser = stored ? JSON.parse(stored) : {};
+            await AsyncStorage.setItem('@auth_user', JSON.stringify({ ...currentUser, ...response.data }));
 
             return response.data;
         } catch (error) {
@@ -60,9 +61,8 @@ const profileService = {
         try {
             const response = await apiClient.delete(`/consumer/${uid}/account`);
 
-            // Clear local storage
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('userData');
+            // Clear persisted auth data
+            await AsyncStorage.multiRemove(['@auth_token', '@auth_user']);
 
             return response.data;
         } catch (error) {
@@ -126,45 +126,6 @@ const profileService = {
             return response.data;
         } catch (error) {
             console.error('Error deleting address:', error);
-            throw error;
-        }
-    },
-
-    /**
-     * Update an existing address
-     * @param {string} uid - User ID
-     * @param {string} addressId - Address ID
-     * @param {Object} address - Updated address data
-     * @returns {Promise} Updated address
-     */
-    updateAddress: async (uid, addressId, address) => {
-        try {
-            // Assuming there's a PUT endpoint (not in spec, but common pattern)
-            const response = await apiClient.put(
-                `/consumer/${uid}/address/${addressId}`,
-                address
-            );
-            return response.data;
-        } catch (error) {
-            console.error('Error updating address:', error);
-            throw error;
-        }
-    },
-
-    /**
-     * Set default address
-     * @param {string} uid - User ID
-     * @param {string} addressId - Address ID to set as default
-     * @returns {Promise} Updated address
-     */
-    setDefaultAddress: async (uid, addressId) => {
-        try {
-            const response = await apiClient.patch(
-                `/consumer/${uid}/address/${addressId}/default`
-            );
-            return response.data;
-        } catch (error) {
-            console.error('Error setting default address:', error);
             throw error;
         }
     },

@@ -1,0 +1,32 @@
+{
+    "Seller": {
+        "Auth & Onboarding": {
+            "POST /auth/login": {},
+            "POST /auth/apply-seller": {},
+            "GET /auth/check-seller-status": {},
+            "POST /auth/extract-aadhar": {},
+            "POST /auth/upload-image": {}
+        },
+        "Products Management": {
+            "GET /products/seller/:uid": {},
+            "PUT /products/:id": {},
+            "DELETE /products/:id": {},
+            "POST /seller/product/add": {}
+        },
+        "Dashboard & Profile": {
+            "GET /seller/:uid/public-profile": {},
+            "GET /seller/:uid/dashboard-data": {},
+            "POST /seller/correction-request": {},
+            "POST /seller/edit-request": {}
+        },
+        "Orders Handling": {
+            "PUT /seller/order/:id/status": {}
+        },
+        "Logistics": {
+            "POST /seller/pickup-address": {}
+        },
+        "Notifications": {
+            "PUT /seller/:uid/notification-seen": {}
+        }
+    }
+}

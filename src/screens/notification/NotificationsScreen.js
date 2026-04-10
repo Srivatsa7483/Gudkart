@@ -1,4 +1,4 @@
-// ─── NotificationsScreen.js ──────────────────────────────────────────────────
+﻿// ─── NotificationsScreen.js ──────────────────────────────────────────────────
 // Gudkart — Expo Go compatible
 //
 // Features:
@@ -19,7 +19,7 @@ import {
     StatusBar,
     Platform,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../../components/SafeLinearGradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNotifications } from '../../context/NotificationContext';

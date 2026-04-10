@@ -12,6 +12,7 @@ import AppNavigator from './src/navigation/AppNavigator';
 import { AuthProvider } from './src/context/AuthContext';
 import { NotificationProvider } from './src/context/NotificationContext';
 import { CartProvider } from './src/context/CartContext';
+import { WishlistProvider } from './src/context/WishlistContext';
 
 const LoadingFallback = () => (
     <View style={{ flex: 1, backgroundColor: '#0D0B1E', alignItems: 'center', justifyContent: 'center' }}>
@@ -28,7 +29,9 @@ export default function App() {
                         <AuthProvider>
                             <NotificationProvider>
                                 <CartProvider>
-                                    <AppNavigator />
+                                    <WishlistProvider>
+                                        <AppNavigator />
+                                    </WishlistProvider>
                                 </CartProvider>
                             </NotificationProvider>
                         </AuthProvider>

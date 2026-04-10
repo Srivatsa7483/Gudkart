@@ -1,136 +1,269 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+// ─── src/context/AuthContext.js ────────────────────────────────────────────
+//
+// CENTRAL AUTH STORE — single source of truth for the entire app.
+//
+// What it holds
+// ─────────────
+//   uid          string | null   Firebase/backend user ID
+//   user         object | null   Full profile returned by the backend
+//   token        string | null   JWT / auth token stored in AsyncStorage
+//   isLoggedIn   bool            Quick guard used by navigators
+//   isLoading    bool            True while the stored session is being restored
+//
+// What it exposes (via useAuth hook)
+// ────────────────────────────────────
+//   login(payload)    → calls POST /auth/login,  persists session, sets uid
+//   register(payload) → calls POST /auth/register, persists session, sets uid
+//   logout()          → wipes AsyncStorage + Redux + resets state
+//   updateUser(patch) → merge-update the local user object (for EditProfile etc.)
+//
+// Usage in any screen / component
+// ────────────────────────────────
+//   import { useAuth } from '../../context/AuthContext';
+//   const { uid, user, isLoggedIn, login, logout } = useAuth();
+//
+// ──────────────────────────────────────────────────────────────────────────
+
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useDispatch } from 'react-redux';
 
-const AuthContext = createContext();
+// Redux slice actions (update these import paths if your slice lives elsewhere)
+import {
+  setCredentials,
+  clearCredentials,
+} from '../store/slices/authSlice';
 
+// Backend auth service
+import authService from '../services/api/authService';
+
+// ─── Storage keys ──────────────────────────────────────────────────────────
+const STORAGE_KEY_TOKEN = '@auth_token';
+const STORAGE_KEY_USER = '@auth_user';
+
+// ─── Context ───────────────────────────────────────────────────────────────
+const AuthContext = createContext(null);
+
+// ─── Provider ──────────────────────────────────────────────────────────────
 export const AuthProvider = ({ children }) => {
+  const dispatch = useDispatch();
+
+  const [uid, setUid] = useState(null);
   const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [token, setToken] = useState(null);
+  const [isLoading, setIsLoading] = useState(true); // true until stored session is restored
 
-  // Check if user is logged in on app start
+  // ── Restore session on app cold-start ──────────────────────────────────
   useEffect(() => {
-    checkAuthStatus();
-  }, []);
+    const restoreSession = async () => {
+      try {
+        const [storedToken, storedUserJson] = await AsyncStorage.multiGet([
+          STORAGE_KEY_TOKEN,
+          STORAGE_KEY_USER,
+        ]);
 
-  const checkAuthStatus = async () => {
-    try {
-      const userData = await AsyncStorage.getItem('@user_data');
-      const token = await AsyncStorage.getItem('@auth_token');
-      
-      if (userData && token) {
-        setUser(JSON.parse(userData));
-        setIsAuthenticated(true);
+        const restoredToken = storedToken[1];
+        const restoredUser = storedUserJson[1] ? JSON.parse(storedUserJson[1]) : null;
+
+        if (restoredToken && restoredUser) {
+          const restoredUid = restoredUser.uid ?? restoredUser._id ?? restoredUser.id ?? null;
+
+          setToken(restoredToken);
+          setUser(restoredUser);
+          setUid(restoredUid);
+
+          // Keep Redux in sync too
+          dispatch(setCredentials({ token: restoredToken, user: restoredUser }));
+
+          console.log('🔑 [AuthContext] Session restored — uid:', restoredUid);
+        } else {
+          console.log('ℹ️ [AuthContext] No stored session found');
+        }
+      } catch (err) {
+        console.warn('⚠️ [AuthContext] Failed to restore session:', err);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      console.error('Error checking auth status:', error);
-    } finally {
-      setIsLoading(false);
-    }
+    };
+
+    restoreSession();
+  }, [dispatch]);
+
+  // ── Persist session helpers ─────────────────────────────────────────────
+  const persistSession = async (newToken, newUser) => {
+    await AsyncStorage.multiSet([
+      [STORAGE_KEY_TOKEN, newToken],
+      [STORAGE_KEY_USER, JSON.stringify(newUser)],
+    ]);
   };
 
-  const login = async (email, password) => {
+  const wipeSession = async () => {
+    await AsyncStorage.multiRemove([STORAGE_KEY_TOKEN, STORAGE_KEY_USER]);
+  };
+
+  // ── Apply a successful auth response ────────────────────────────────────
+  const applyAuthResponse = useCallback(async (responseData, firebaseIdToken = '') => {
+    // Backend may not issue its own JWT — it uses the Firebase idToken as the
+    // Bearer token for subsequent API calls. Fall back to the Firebase idToken
+    // when no backend token is present in the response.
+    const newUser = responseData.user ?? responseData.profile ?? responseData;
+    const newToken =
+      responseData.token ?? responseData.accessToken ?? responseData.jwt ?? firebaseIdToken;
+    const newUid = newUser.uid ?? newUser._id ?? newUser.id ?? null;
+
+    setToken(newToken);
+    setUser(newUser);
+    setUid(newUid);
+
+    // Sync Redux
+    dispatch(setCredentials({ token: newToken, user: newUser }));
+
+    // Persist to AsyncStorage so the next cold-start restores automatically
+    await persistSession(newToken, newUser);
+
+    console.log('✅ [AuthContext] Session applied — uid:', newUid);
+  }, [dispatch]);
+
+  // ── login ───────────────────────────────────────────────────────────────
+  /**
+   * Call this from LoginScreen after Firebase auth succeeds.
+   *
+   * @param {Object} payload  { idToken, email?, phone?, isTest? }
+   * @returns {{ success: boolean, uid?: string, error?: string }}
+   */
+  const login = useCallback(async (payload) => {
     try {
-      // Mock login - Replace with actual API call
-      const mockUser = {
-        id: '1',
-        name: 'Rahul Kumar',
-        email: email,
-        phone: '+91 9876543210',
-        avatar: null,
-      };
+      console.log('📤 [AuthContext] POST /auth/login');
+      const data = await authService.login(payload);
 
-      const mockToken = 'mock_auth_token_123456789';
+      // Pass the Firebase idToken so it becomes the Bearer token if the
+      // backend doesn't return its own JWT.
+      await applyAuthResponse(data, payload.idToken);
 
-      // Save to AsyncStorage
-      await AsyncStorage.setItem('@user_data', JSON.stringify(mockUser));
-      await AsyncStorage.setItem('@auth_token', mockToken);
-
-      setUser(mockUser);
-      setIsAuthenticated(true);
-      
-      return { success: true };
-    } catch (error) {
-      console.error('Login error:', error);
-      return { success: false, error: 'Login failed' };
+      const resolvedUid = data.uid ?? data.user?.uid ?? data.user?._id ?? data.user?.id ?? null;
+      return { success: true, uid: resolvedUid };
+    } catch (err) {
+      console.error('❌ [AuthContext] login error:', err);
+      const message =
+        err?.response?.data?.message ??
+        err?.response?.data?.error ??
+        err?.message ??
+        'Login failed';
+      return { success: false, error: message };
     }
-  };
+  }, [applyAuthResponse]);
 
-  const register = async (userData) => {
+  // ── register ────────────────────────────────────────────────────────────
+  /**
+   * Call this from RegisterScreen after Firebase auth succeeds.
+   *
+   * @param {Object} payload  { idToken, fullName, email?, phone?, password?, isTest? }
+   * @returns {{ success: boolean, uid?: string, error?: string }}
+   */
+  const register = useCallback(async (payload) => {
     try {
-      // Mock registration - Replace with actual API call
-      const newUser = {
-        id: Date.now().toString(),
-        name: userData.fullName,
-        email: userData.email,
-        phone: userData.phone,
-        avatar: null,
-      };
+      console.log('📤 [AuthContext] POST /auth/register');
+      const data = await authService.register(payload);
 
-      const mockToken = 'mock_auth_token_' + Date.now();
+      await applyAuthResponse(data, payload.idToken);
 
-      // Save to AsyncStorage
-      await AsyncStorage.setItem('@user_data', JSON.stringify(newUser));
-      await AsyncStorage.setItem('@auth_token', mockToken);
-
-      setUser(newUser);
-      setIsAuthenticated(true);
-      
-      return { success: true };
-    } catch (error) {
-      console.error('Registration error:', error);
-      return { success: false, error: 'Registration failed' };
+      const resolvedUid = data.uid ?? data.user?.uid ?? data.user?._id ?? data.user?.id ?? null;
+      return { success: true, uid: resolvedUid };
+    } catch (err) {
+      console.error('❌ [AuthContext] register error:', err);
+      const message =
+        err?.response?.data?.message ??
+        err?.response?.data?.error ??
+        err?.message ??
+        'Registration failed';
+      return { success: false, error: message };
     }
-  };
+  }, [applyAuthResponse]);
 
-  const logout = async () => {
+  // ── logout ──────────────────────────────────────────────────────────────
+  /**
+   * Wipes local state, AsyncStorage, and Redux.
+   * Call this from ProfileScreen / SettingsScreen.
+   */
+  const logout = useCallback(async () => {
     try {
-      // Clear AsyncStorage
-      await AsyncStorage.removeItem('@user_data');
-      await AsyncStorage.removeItem('@auth_token');
-
-      setUser(null);
-      setIsAuthenticated(false);
-      
-      return { success: true };
-    } catch (error) {
-      console.error('Logout error:', error);
-      return { success: false, error: 'Logout failed' };
+      // Optionally tell the backend
+      await authService.logout?.();
+    } catch (_) {
+      // Non-fatal — always clear locally
     }
-  };
 
-  const updateUser = async (updatedData) => {
-    try {
-      const updatedUser = { ...user, ...updatedData };
-      await AsyncStorage.setItem('@user_data', JSON.stringify(updatedUser));
-      setUser(updatedUser);
-      return { success: true };
-    } catch (error) {
-      console.error('Update user error:', error);
-      return { success: false, error: 'Update failed' };
-    }
-  };
+    setUid(null);
+    setUser(null);
+    setToken(null);
+    dispatch(clearCredentials());
+    await wipeSession();
 
-  const value = {
+    console.log('👋 [AuthContext] Logged out');
+  }, [dispatch]);
+
+  // ── updateUser ──────────────────────────────────────────────────────────
+  /**
+   * Merge-patch the local user object.
+   * Call this from EditProfileScreen after a successful profile update API call.
+   *
+   * @param {Object} patch  Partial user fields to merge in
+   */
+  const updateUser = useCallback(async (patch) => {
+    setUser((prev) => {
+      const updated = { ...prev, ...patch };
+      // Persist the update so it survives an app restart
+      persistSession(token, updated).catch(() => { });
+      // Sync Redux
+      dispatch(setCredentials({ token, user: updated }));
+      return updated;
+    });
+  }, [token, dispatch]);
+
+  // ── Context value ───────────────────────────────────────────────────────
+  // useMemo so consumers only re-render when something actually changes
+  const value = useMemo(() => ({
+    // State
+    uid,
     user,
-    isAuthenticated,
+    token,
+    isLoggedIn: !!uid,
     isLoading,
+
+    // Actions
     login,
     register,
     logout,
     updateUser,
-  };
+  }), [uid, user, token, isLoading, login, register, logout, updateUser]);
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
-// Custom hook to use auth context
+// ─── useAuth hook ───────────────────────────────────────────────────────────
+/**
+ * Primary hook — use this everywhere instead of route.params.uid.
+ *
+ * @example
+ * const { uid, user, isLoggedIn, logout } = useAuth();
+ */
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error('useAuth must be used inside <AuthProvider>');
   }
-  return context;
+  return ctx;
 };
 
 export default AuthContext;

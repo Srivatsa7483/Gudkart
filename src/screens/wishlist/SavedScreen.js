@@ -1,4 +1,4 @@
-// ─── SavedScreen.js ────────────────────────────────────────────────────────
+﻿// ─── SavedScreen.js ────────────────────────────────────────────────────────
 // Gudkart — Expo Go compatible
 //
 // Features:
@@ -25,116 +25,20 @@ import {
     StatusBar,
     Animated,
     Platform,
+    Image,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../../components/SafeLinearGradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import useTheme from '../../hooks/useTheme';
 import { useToast } from '../../components/ToastNotification';
 import { useCart } from '../../context/CartContext';
+import { useWishlist } from '../../context/WishlistContext';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 48) / 2;
 
-// ─── Mock wishlist data ────────────────────────────────────────────────────
-const INITIAL_WISHLIST = [
-    {
-        id: 'w1',
-        name: 'Gold Edition Smart Watch Pro',
-        price: 8999,
-        originalPrice: 14000,
-        savedPrice: 10500,   // price when user saved it
-        discount: 36,
-        rating: 4.9,
-        reviews: 1203,
-        category: 'Jewels',
-        badge: 'EXCLUSIVE',
-        badgeColor: '#F5C842',
-        emoji: '⌚',
-        inStock: true,
-        savedAt: '2 days ago',
-    },
-    {
-        id: 'w2',
-        name: 'Sony WH-1000XM5',
-        price: 18999,
-        originalPrice: 29990,
-        savedPrice: 18999,
-        discount: 37,
-        rating: 4.8,
-        reviews: 5441,
-        category: 'Tech',
-        badge: 'TOP RATED',
-        badgeColor: '#4ADE80',
-        emoji: '🎧',
-        inStock: true,
-        savedAt: '5 days ago',
-    },
-    {
-        id: 'w3',
-        name: 'Diamond Pendant',
-        price: 12500,
-        originalPrice: 18000,
-        savedPrice: 14000,
-        discount: 31,
-        rating: 4.6,
-        reviews: 89,
-        category: 'Jewels',
-        badge: 'TRENDING',
-        badgeColor: '#F5C842',
-        emoji: '💎',
-        inStock: true,
-        savedAt: '1 week ago',
-    },
-    {
-        id: 'w4',
-        name: 'Pixel 9 Ultra',
-        price: 72000,
-        originalPrice: 85000,
-        savedPrice: 72000,
-        discount: 15,
-        rating: 4.7,
-        reviews: 541,
-        category: 'Tech',
-        badge: 'NEW',
-        badgeColor: '#60A5FA',
-        emoji: '📱',
-        inStock: false,
-        savedAt: '2 weeks ago',
-    },
-    {
-        id: 'w5',
-        name: 'Silk Kurta Set',
-        price: 3200,
-        originalPrice: 5000,
-        savedPrice: 3800,
-        discount: 36,
-        rating: 4.4,
-        reviews: 203,
-        category: 'Fashion',
-        badge: 'HOT',
-        badgeColor: '#F472B6',
-        emoji: '👗',
-        inStock: true,
-        savedAt: '3 weeks ago',
-    },
-    {
-        id: 'w6',
-        name: 'MacBook Air M3',
-        price: 114900,
-        originalPrice: 129900,
-        savedPrice: 114900,
-        discount: 12,
-        rating: 4.9,
-        reviews: 823,
-        category: 'Tech',
-        badge: 'NEW',
-        badgeColor: '#60A5FA',
-        emoji: '💻',
-        inStock: true,
-        savedAt: '1 month ago',
-    },
-];
+// ─── Constants ─────────────────────────────────────────────────────────────
 
 const SORT_OPTIONS = [
     { id: 'recent', label: 'Recently Added' },
@@ -213,7 +117,15 @@ const GridCard = ({ item, colors, gradients, onRemove, onAddToCart, onPress }) =
 
                 {/* Image */}
                 <View style={[styles.gridImageBox, { backgroundColor: colors.cardAlt }]}>
-                    <Text style={styles.gridEmoji}>{item.emoji}</Text>
+                    {item.image ? (
+                        <Image
+                            source={{ uri: item.image }}
+                            style={StyleSheet.absoluteFill}
+                            resizeMode="cover"
+                        />
+                    ) : (
+                        <Text style={styles.gridEmoji}>{item.emoji || '📦'}</Text>
+                    )}
                 </View>
 
                 {/* Info */}
@@ -254,7 +166,9 @@ const GridCard = ({ item, colors, gradients, onRemove, onAddToCart, onPress }) =
                     disabled={!item.inStock}
                 >
                     <LinearGradient
-                        colors={item.inStock ? gradients.button : [colors.border, colors.border]}
+                        colors={item.inStock
+                            ? ((gradients?.button || []).every(Boolean) ? gradients.button : ['#7B5EEA', '#5A3EC8'])
+                            : [colors.border || '#ccc', colors.border || '#ccc']}
                         style={styles.gridCartGradient}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
@@ -291,7 +205,15 @@ const ListCard = ({ item, colors, gradients, onRemove, onAddToCart, onPress }) =
             >
                 {/* Image */}
                 <View style={[styles.listImageBox, { backgroundColor: colors.cardAlt }]}>
-                    <Text style={styles.listEmoji}>{item.emoji}</Text>
+                    {item.image ? (
+                        <Image
+                            source={{ uri: item.image }}
+                            style={StyleSheet.absoluteFill}
+                            resizeMode="cover"
+                        />
+                    ) : (
+                        <Text style={styles.listEmoji}>{item.emoji || '📦'}</Text>
+                    )}
                     {!item.inStock && (
                         <View style={styles.listOutOfStock}>
                             <Text style={styles.listOutOfStockText}>Out of Stock</Text>
@@ -338,7 +260,9 @@ const ListCard = ({ item, colors, gradients, onRemove, onAddToCart, onPress }) =
                             activeOpacity={0.8}
                         >
                             <LinearGradient
-                                colors={item.inStock ? gradients.button : [colors.border, colors.border]}
+                                colors={item.inStock
+                                    ? ((gradients?.button || []).every(Boolean) ? gradients.button : ['#7B5EEA', '#5A3EC8'])
+                                    : [colors.border || '#ccc', colors.border || '#ccc']}
                                 style={styles.listCartGradient}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 0 }}
@@ -388,25 +312,25 @@ const SavedScreen = ({ navigation }) => {
     const { colors, gradients, isDark } = useTheme();
     const { showToast, ToastComponent } = useToast();
     const { addToCart } = useCart();
-    const [wishlist, setWishlist] = useState(INITIAL_WISHLIST);
+    const { wishlistItems, removeFromWishlist } = useWishlist();
     const [viewMode, setViewMode] = useState('grid');   // 'grid' | 'list'
     const [sortBy, setSortBy] = useState('recent');
     const [showSort, setShowSort] = useState(false);
 
     // Sort logic
     const sortedWishlist = React.useMemo(() => {
-        const list = [...wishlist];
+        const list = [...wishlistItems];
         switch (sortBy) {
             case 'price_asc': return list.sort((a, b) => a.price - b.price);
             case 'price_desc': return list.sort((a, b) => b.price - a.price);
             case 'rating': return list.sort((a, b) => b.rating - a.rating);
             default: return list; // recent — keep insertion order
         }
-    }, [wishlist, sortBy]);
+    }, [wishlistItems, sortBy]);
 
     const handleRemove = useCallback((id) => {
-        setWishlist((prev) => prev.filter((i) => i.id !== id));
-    }, []);
+        removeFromWishlist(id);
+    }, [removeFromWishlist]);
 
     const handleAddToCart = useCallback((item) => {
         addToCart(item, 1);
@@ -448,7 +372,7 @@ const SavedScreen = ({ navigation }) => {
         });
     };
 
-    const priceDropCount = wishlist.filter((i) => i.price < i.savedPrice).length;
+    const priceDropCount = wishlistItems.filter((i) => i.price < i.savedPrice).length;
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -460,7 +384,7 @@ const SavedScreen = ({ navigation }) => {
                     <View>
                         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Saved</Text>
                         <Text style={[styles.headerSub, { color: colors.textMuted }]}>
-                            {wishlist.length} {wishlist.length === 1 ? 'item' : 'items'}
+                            {wishlistItems.length} {wishlistItems.length === 1 ? 'item' : 'items'}
                             {priceDropCount > 0 ? `  ·  ${priceDropCount} price drop${priceDropCount > 1 ? 's' : ''}! 🎉` : ''}
                         </Text>
                     </View>
@@ -487,7 +411,7 @@ const SavedScreen = ({ navigation }) => {
                 </View>
 
                 {/* ── Action bar ──────────────────────────────────────────────── */}
-                {wishlist.length > 0 && (
+                {wishlistItems.length > 0 && (
                     <View style={[styles.actionBar, { borderBottomColor: colors.border }]}>
                         {/* Sort */}
                         <TouchableOpacity
@@ -509,7 +433,7 @@ const SavedScreen = ({ navigation }) => {
                             activeOpacity={0.85}
                         >
                             <LinearGradient
-                                colors={gradients.accentButton}
+                                colors={(gradients?.accentButton || []).every(Boolean) ? gradients.accentButton : ['#FFD700', '#FFA500']}
                                 style={styles.moveAllGradient}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 0 }}
@@ -522,7 +446,7 @@ const SavedScreen = ({ navigation }) => {
                 )}
 
                 {/* Sort dropdown */}
-                {showSort && wishlist.length > 0 && (
+                {showSort && wishlistItems.length > 0 && (
                     <View style={[styles.sortDropdown, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         {SORT_OPTIONS.map((opt) => (
                             <TouchableOpacity
@@ -545,7 +469,7 @@ const SavedScreen = ({ navigation }) => {
             </SafeAreaView>
 
             {/* ── Body ────────────────────────────────────────────────────────── */}
-            {wishlist.length === 0 ? (
+            {wishlistItems.length === 0 ? (
                 <EmptyState
                     colors={colors}
                     gradients={gradients}
@@ -569,7 +493,7 @@ const SavedScreen = ({ navigation }) => {
                                 gradients={gradients}
                                 onRemove={handleRemove}
                                 onAddToCart={handleAddToCart}
-                                onPress={() => { }}
+                                onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
                             />
                         ) : (
                             <ListCard
@@ -578,7 +502,7 @@ const SavedScreen = ({ navigation }) => {
                                 gradients={gradients}
                                 onRemove={handleRemove}
                                 onAddToCart={handleAddToCart}
-                                onPress={() => { }}
+                                onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
                             />
                         )
                     }

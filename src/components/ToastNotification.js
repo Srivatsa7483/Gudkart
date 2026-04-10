@@ -1,4 +1,4 @@
-// ─── ToastNotification.js ──────────────────────────────────────────────────
+﻿// ─── ToastNotification.js ──────────────────────────────────────────────────
 // Gudkart — Reusable themed toast/snackbar notification
 // Replaces plain Alert.alert() with on-brand animated toasts
 //
@@ -17,7 +17,7 @@ import {
     TouchableOpacity,
     Dimensions,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from './SafeLinearGradient';
 import { Ionicons } from '@expo/vector-icons';
 import useTheme from '../hooks/useTheme';
 

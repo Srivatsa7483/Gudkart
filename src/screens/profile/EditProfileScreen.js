@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import {
     View,
     Text,
@@ -9,20 +9,24 @@ import {
     StatusBar,
     Alert,
     KeyboardAvoidingView,
-    SafeAreaView,
     Platform,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from '../../components/SafeLinearGradient';
 import { Ionicons } from '@expo/vector-icons';
 import useTheme from '../../hooks/useTheme';
+import { useAuth } from '../../context/AuthContext';
+import profileService from '../../services/api/Profileservice';
 
 const EditProfileScreen = ({ navigation }) => {
     const { colors, gradients, isDark } = useTheme();
+    const insets = useSafeAreaInsets();
+    const { uid, user, updateUser } = useAuth();
 
-    const [name, setName] = useState('Rahul Mehta');
-    const [email, setEmail] = useState('rahul.mehta@gmail.com');
-    const [phone, setPhone] = useState('+91 98765 43210');
-    const [bio, setBio] = useState('');
+    const [name, setName] = useState(user?.fullName || user?.name || '');
+    const [email, setEmail] = useState(user?.email || '');
+    const [phone, setPhone] = useState(user?.phone || '');
+    const [bio, setBio] = useState(user?.bio || '');
     const [focusedField, setFocusedField] = useState(null);
     const [loading, setLoading] = useState(false);
 
@@ -31,22 +35,34 @@ const EditProfileScreen = ({ navigation }) => {
         .map(w => w[0])
         .join('')
         .toUpperCase()
-        .slice(0, 2);
+        .slice(0, 2) || 'U';
 
     const handleSave = async () => {
         if (!name.trim()) {
             Alert.alert('Validation', 'Name cannot be empty.');
             return;
         }
+        if (!uid) {
+            Alert.alert('Error', 'You must be logged in to update your profile.');
+            return;
+        }
         setLoading(true);
         try {
-            // await dispatch(updateProfile({ name, email, phone, bio }));
-            await new Promise(r => setTimeout(r, 800)); // remove – demo only
+            const updated = await profileService.updateProfile(uid, {
+                fullName: name.trim(),
+                email: email.trim(),
+                phone: phone.trim(),
+                bio: bio.trim(),
+            });
+            // Merge the response back into AuthContext so the rest of the app sees fresh data
+            updateUser(updated);
             Alert.alert('Success', 'Profile updated successfully!', [
                 { text: 'OK', onPress: () => navigation.goBack() },
             ]);
         } catch (e) {
-            Alert.alert('Error', 'Could not update profile. Please try again.');
+            console.error('Update profile error:', e);
+            const msg = e?.response?.data?.message || 'Could not update profile. Please try again.';
+            Alert.alert('Error', msg);
         } finally {
             setLoading(false);
         }
@@ -64,38 +80,40 @@ const EditProfileScreen = ({ navigation }) => {
             />
 
             {/* ── Header ── */}
-            <SafeAreaView style={{ backgroundColor: colors.surface }}>
-                <View style={[s.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                    <TouchableOpacity
-                        style={[s.headerBtn, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}
-                        onPress={() => navigation.goBack()}
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
-                    </TouchableOpacity>
+            <View style={[s.header, { 
+                backgroundColor: colors.surface, 
+                borderBottomColor: colors.border,
+                paddingTop: insets.top + 8
+            }]}>
+                <TouchableOpacity
+                    style={[s.headerBtn, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}
+                    onPress={() => navigation.goBack()}
+                    activeOpacity={0.7}
+                >
+                    <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+                </TouchableOpacity>
 
-                    <Text style={[s.headerTitle, { color: colors.textPrimary }]}>Edit Profile</Text>
+                <Text style={[s.headerTitle, { color: colors.textPrimary }]}>Edit Profile</Text>
 
-                    <TouchableOpacity
+                <TouchableOpacity
+                    style={[
+                        s.saveBtn,
+                        { backgroundColor: loading ? colors.border : colors.accent },
+                    ]}
+                    onPress={handleSave}
+                    disabled={loading}
+                    activeOpacity={0.8}
+                >
+                    <Text
                         style={[
-                            s.saveBtn,
-                            { backgroundColor: loading ? colors.border : colors.accent },
+                            s.saveBtnText,
+                            { color: loading ? colors.textMuted : colors.textInverse },
                         ]}
-                        onPress={handleSave}
-                        disabled={loading}
-                        activeOpacity={0.8}
                     >
-                        <Text
-                            style={[
-                                s.saveBtnText,
-                                { color: loading ? colors.textMuted : colors.textInverse },
-                            ]}
-                        >
-                            {loading ? 'Saving…' : 'Save'}
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-            </SafeAreaView>
+                        {loading ? 'Saving…' : 'Save'}
+                    </Text>
+                </TouchableOpacity>
+            </View>
 
             <KeyboardAvoidingView
                 style={{ flex: 1 }}
@@ -131,15 +149,17 @@ const EditProfileScreen = ({ navigation }) => {
                     </View>
 
                     {/* ── Membership Badge ── */}
-                    <View style={[s.badgeRow, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '30', borderWidth: 1 }]}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Ionicons name="star" size={16} color={colors.accent} />
-                            <Text style={[s.badgeText, { color: colors.accent }]}>Gold Member</Text>
+                    {user?.createdAt ? (
+                        <View style={[s.badgeRow, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '30', borderWidth: 1 }]}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <Ionicons name="star" size={16} color={colors.accent} />
+                                <Text style={[s.badgeText, { color: colors.accent }]}>Gold Member</Text>
+                            </View>
+                            <Text style={[s.badgeSub, { color: colors.textSecondary }]}>
+                                Since {new Date(user.createdAt).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                            </Text>
                         </View>
-                        <Text style={[s.badgeSub, { color: colors.textSecondary }]}>
-                            Since Jan 2024
-                        </Text>
-                    </View>
+                    ) : null}
 
                     {/* ── Form ── */}
                     <View style={[s.formCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -212,11 +232,11 @@ const EditProfileScreen = ({ navigation }) => {
                             ACCOUNT STATS
                         </Text>
                         <View style={s.statsRow}>
-                            <StatItem icon="bag-handle-outline" value="24" label="Orders" colors={colors} />
+                            <StatItem icon="bag-handle-outline" value={user?.stats?.orders ?? '—'} label="Orders" colors={colors} />
                             <View style={[s.statDivider, { backgroundColor: colors.border }]} />
-                            <StatItem icon="heart-outline" value="12" label="Wishlist" colors={colors} />
+                            <StatItem icon="heart-outline" value={user?.stats?.wishlist ?? '—'} label="Wishlist" colors={colors} />
                             <View style={[s.statDivider, { backgroundColor: colors.border }]} />
-                            <StatItem icon="star-outline" value="8" label="Reviews" colors={colors} />
+                            <StatItem icon="star-outline" value={user?.stats?.reviews ?? '—'} label="Reviews" colors={colors} />
                         </View>
                     </View>
 
@@ -306,7 +326,6 @@ const s = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: 20,
-        paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 0) + 12,
         paddingBottom: 16,
         borderBottomWidth: 1,
     },

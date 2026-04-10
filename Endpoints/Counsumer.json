@@ -1,0 +1,117 @@
+{
+    "Consumer": {
+        "Auth": {
+            "POST /auth/login": {
+                "description": "Authenticate user and return role + status.",
+                "payload": {
+                    "idToken": "string (Firebase token)",
+                    "isTest": "boolean (optional)",
+                    "email": "string (optional)",
+                    "phone": "string (optional)"
+                }
+            },
+            "POST /auth/register": {
+                "description": "Register a new consumer or update existing profile.",
+                "payload": {
+                    "idToken": "string",
+                    "phone": "string",
+                    "fullName": "string",
+                    "dob": "string",
+                    "email": "string",
+                    "password": "string",
+                    "isTest": "boolean"
+                }
+            },
+            "POST /auth/send-email-otp": {
+                "description": "Send OTP to email for verification.",
+                "payload": {
+                    "email": "string"
+                }
+            }
+        },
+        "Products": {
+            "GET /products": {
+                "description": "Fetch all available products for browsing."
+            },
+            "GET /products/:id": {
+                "description": "Fetch detailed information of a single product."
+            }
+        },
+        "Orders": {
+            "POST /orders/place": {
+                "description": "Place a new order, generate invoice, and reduce stock.",
+                "payload": {
+                    "uid": "string",
+                    "orderData": {
+                        "items": "array of objects",
+                        "total": "number",
+                        "email": "string",
+                        "paymentMethod": "string",
+                        "shippingDetails": "object"
+                    }
+                }
+            },
+            "GET /orders/user/:uid": {
+                "description": "Get all orders placed by the user."
+            },
+            "GET /orders/user/:uid/reviewable-orders": {
+                "description": "Get delivered orders that are not yet reviewed."
+            },
+            "GET /orders/:orderId": {
+                "description": "Fetch details of a specific order."
+            },
+            "POST /orders/:orderId/cancel": {
+                "description": "Cancel an order and process refund if applicable.",
+                "payload": {
+                    "cancellationReason": "string"
+                }
+            },
+            "GET /orders/invoice/:orderId": {
+                "description": "Download invoice PDF for the order."
+            },
+            "GET /orders/:orderId/label": {
+                "description": "Fetch shipping label for the order."
+            }
+        },
+        "Cart & Profile": {
+            "GET /consumer/:uid/cart": {
+                "description": "Retrieve user's shopping cart."
+            },
+            "POST /consumer/:uid/cart": {
+                "description": "Update cart items.",
+                "payload": {
+                    "cartItems": "array of objects"
+                }
+            },
+            "GET /consumer/:uid/addresses": {
+                "description": "Get all saved addresses of the user."
+            },
+            "POST /consumer/:uid/address": {
+                "description": "Add a new shipping address."
+            },
+            "DELETE /consumer/:uid/address/:addressId": {
+                "description": "Delete a saved address."
+            },
+            "GET /consumer/:uid/profile": {
+                "description": "Fetch user profile details."
+            },
+            "POST /consumer/:uid/profile": {
+                "description": "Update user profile."
+            },
+            "DELETE /consumer/:uid/account": {
+                "description": "Delete consumer account permanently."
+            }
+        },
+        "Wishlist": {
+            "GET /consumer/:uid/wishlist": {
+                "description": "Fetch wishlist items."
+            },
+            "POST /consumer/:uid/wishlist/add": {
+                "description": "Add product to wishlist."
+            },
+            "DELETE /consumer/:uid/wishlist/:productId": {
+                "description": "Remove product from wishlist."
+            }
+        }
+    }
+}

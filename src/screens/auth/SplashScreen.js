@@ -1,4 +1,4 @@
-// ─── Gudkart Splash Screen ───────────────────────────────────────────────────
+﻿// ─── Gudkart Splash Screen ───────────────────────────────────────────────────
 //
 // Animated sequence:
 //  0ms  → Background gradient fades in
@@ -21,7 +21,7 @@ import {
     StatusBar,
     Easing,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../../components/SafeLinearGradient';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width, height } = Dimensions.get('window');

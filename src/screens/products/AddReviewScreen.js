@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+﻿import React, { useState, useRef } from 'react';
 import {
     View,
     Text,
@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../../components/SafeLinearGradient';
 import useTheme from '../../hooks/useTheme';
 
 const AddReviewScreen = ({ navigation, route }) => {
@@ -61,9 +61,9 @@ const AddReviewScreen = ({ navigation, route }) => {
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-            
+
             <SafeAreaView edges={['top']} style={styles.header}>
-                <TouchableOpacity 
+                <TouchableOpacity
                     onPress={() => navigation.goBack()}
                     style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
                 >
@@ -73,11 +73,11 @@ const AddReviewScreen = ({ navigation, route }) => {
                 <View style={{ width: 44 }} />
             </SafeAreaView>
 
-            <KeyboardAvoidingView 
+            <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
             >
-                <ScrollView 
+                <ScrollView
                     style={styles.content}
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={{ paddingBottom: 100 }}
@@ -118,11 +118,11 @@ const AddReviewScreen = ({ navigation, route }) => {
                             ))}
                         </View>
                         <Text style={[styles.ratingLabel, { color: rating > 0 ? colors.accent : colors.textMuted }]}>
-                            {rating === 1 ? 'Poor' : 
-                             rating === 2 ? 'Fair' : 
-                             rating === 3 ? 'Good' : 
-                             rating === 4 ? 'Very Good' : 
-                             rating === 5 ? 'Excellent!' : 'Tap a star to rate'}
+                            {rating === 1 ? 'Poor' :
+                                rating === 2 ? 'Fair' :
+                                    rating === 3 ? 'Good' :
+                                        rating === 4 ? 'Very Good' :
+                                            rating === 5 ? 'Excellent!' : 'Tap a star to rate'}
                         </Text>
                     </View>
 
@@ -136,7 +136,7 @@ const AddReviewScreen = ({ navigation, route }) => {
                                 placeholderTextColor={colors.textMuted}
                                 multiline
                                 numberOfLines={6}
-								textAlignVertical="top"
+                                textAlignVertical="top"
                                 value={comment}
                                 onChangeText={setComment}
                             />
@@ -149,7 +149,7 @@ const AddReviewScreen = ({ navigation, route }) => {
             </KeyboardAvoidingView>
 
             <View style={[styles.footer, { backgroundColor: colors.background }]}>
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={styles.submitBtn}
                     onPress={handleSubmit}
                     disabled={isSubmitting}
@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '700',
         marginBottom: 20,
-		alignSelf: 'flex-start',
+        alignSelf: 'flex-start',
     },
     starsContainer: {
         flexDirection: 'row',

@@ -15,6 +15,7 @@ import OrdersScreen from '../screens/orders/OrdersScreen';
 import OrderDetailScreen from '../screens/orders/OrderDetailScreen';
 import NotificationsScreen from '../screens/notification/NotificationsScreen';
 import AddReviewScreen from '../screens/products/AddReviewScreen';
+import ProductDetailScreen from '../screens/products/ProductDetailScreen';
 
 // ✅ Cart Flow: Cart (tab) → Checkout → AddAddress → OrderSuccess
 import CheckoutScreen from '../screens/cart/CheckoutScreen';
@@ -47,6 +48,9 @@ const AppNavigator = () => (
 
             {/* Reviews */}
             <Stack.Screen name="AddReview" component={AddReviewScreen} />
+            
+            {/* Shared Products */}
+            <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
 
             {/* ── Checkout Flow ──────────────────────────────
                 Tab:Cart → Checkout → AddAddress → OrderSuccess

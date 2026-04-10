@@ -1,4 +1,4 @@
-// ─── ExploreScreen.js ──────────────────────────────────────────────────────
+﻿// ─── ExploreScreen.js ──────────────────────────────────────────────────────
 // Gudkart — Expo Go compatible
 //
 // States:
@@ -35,7 +35,7 @@ import {
     Pressable,
     Alert,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../../components/SafeLinearGradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import useTheme from '../../hooks/useTheme';

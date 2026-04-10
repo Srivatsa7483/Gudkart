@@ -111,29 +111,16 @@ const orderService = {
     },
 
     /**
-     * Download invoice PDF for the order
+     * Open invoice PDF for the order in the device browser/viewer
      * @param {string} orderId - Order ID
-     * @returns {Promise} Invoice blob or download URL
      */
     downloadInvoice: async (orderId) => {
         try {
-            const response = await apiClient.get(`/orders/invoice/${orderId}`, {
-                responseType: 'blob',
-            });
-
-            // Create a download link
-            const url = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `invoice-${orderId}.pdf`);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(url);
-
-            return response.data;
+            const url = orderService.getInvoiceUrl(orderId);
+            const { Linking } = require('react-native');
+            await Linking.openURL(url);
         } catch (error) {
-            console.error(`Error downloading invoice for order ${orderId}:`, error);
+            console.error(`Error opening invoice for order ${orderId}:`, error);
             throw error;
         }
     },
@@ -163,29 +150,16 @@ const orderService = {
     },
 
     /**
-     * Download shipping label PDF
+     * Open shipping label in the device browser/viewer
      * @param {string} orderId - Order ID
-     * @returns {Promise} Label blob
      */
     downloadShippingLabel: async (orderId) => {
         try {
-            const response = await apiClient.get(`/orders/${orderId}/label`, {
-                responseType: 'blob',
-            });
-
-            // Create a download link
-            const url = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `shipping-label-${orderId}.pdf`);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(url);
-
-            return response.data;
+            const url = `${apiClient.defaults.baseURL}/orders/${orderId}/label`;
+            const { Linking } = require('react-native');
+            await Linking.openURL(url);
         } catch (error) {
-            console.error(`Error downloading shipping label for order ${orderId}:`, error);
+            console.error(`Error opening shipping label for order ${orderId}:`, error);
             throw error;
         }
     },

@@ -1,14 +1,14 @@
-import React from 'react';
+﻿import React from 'react';
 import {
     View,
     Text,
     StyleSheet,
     TouchableOpacity,
     ScrollView,
-    SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../../components/SafeLinearGradient';
 import useTheme from '../../hooks/useTheme';
 
 const ThemeSettingsScreen = ({ navigation }) => {

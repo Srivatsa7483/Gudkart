@@ -1,0 +1,366 @@
+{
+    "baseUrl": "http://localhost:5000 (default)",
+    "api_structure": {
+        "Auth": {
+            "prefix": "/auth",
+            "endpoints": [
+                {
+                    "method": "POST",
+                    "path": "/login",
+                    "description": "Authenticates a user via Firebase Token or test credentials. Returns user role and status.",
+                    "payload": {
+                        "idToken": "string (Firebase token, required unless test)",
+                        "isTest": "boolean (optional)",
+                        "email": "string (optional)",
+                        "phone": "string (optional)"
+                    }
+                },
+                {
+                    "method": "POST",
+                    "path": "/register",
+                    "description": "Registers a new user (Consumer default). Updates profile if existing.",
+                    "payload": {
+                        "idToken": "string",
+                        "phone": "string",
+                        "fullName": "string",
+                        "dob": "string",
+                        "email": "string",
+                        "password": "string",
+                        "isTest": "boolean"
+                    }
+                },
+                {
+                    "method": "POST",
+                    "path": "/send-email-otp",
+                    "description": "Sends a 6-digit OTP to the user's email for verification.",
+                    "payload": {
+                        "email": "string"
+                    }
+                },
+                {
+                    "method": "POST",
+                    "path": "/apply-seller",
+                    "description": "Submits an application for a consumer to become a seller.",
+                    "payload": {
+                        "sellerDetails": {
+                            "shopName": "string",
+                            "category": "string",
+                            "address": "string",
+                            "other_fields": "any"
+                        }
+                    },
+                    "auth_required": true
+                },
+                {
+                    "method": "GET",
+                    "path": "/check-seller-status",
+                    "description": "Checks the current approval status of a seller application.",
+                    "auth_required": true
+                },
+                {
+                    "method": "POST",
+                    "path": "/extract-aadhar",
+                    "description": "Extracts identity data from an uploaded Aadhaar image using AI (Gemini).",
+                    "payload": {
+                        "aadharImage": "file (multipart/form-data)"
+                    }
+                },
+                {
+                    "method": "POST",
+                    "path": "/upload-image",
+                    "description": "Uploads a generic image to Cloudinary.",
+                    "payload": {
+                        "image": "file (multipart/form-data)"
+                    }
+                }
+            ]
+        },
+        "Orders": {
+            "prefix": "/orders",
+            "endpoints": [
+                {
+                    "method": "POST",
+                    "path": "/place",
+                    "description": "Places a new order in the system, triggers invoice generation, and reduces stock.",
+                    "payload": {
+                        "uid": "string",
+                        "orderData": {
+                            "items": "array of objects",
+                            "total": "number",
+                            "email": "string",
+                            "paymentMethod": "string",
+                            "shippingDetails": "object"
+                        }
+                    },
+                    "auth_required": true
+                },
+                {
+                    "method": "GET",
+                    "path": "/user/:uid",
+                    "description": "Fetches all orders placed by a specific user.",
+                    "auth_required": true
+                },
+                {
+                    "method": "GET",
+                    "path": "/user/:uid/reviewable-orders",
+                    "description": "Fetches delivered orders that have not yet been reviewed by the user.",
+                    "auth_required": true
+                },
+                {
+                    "method": "GET",
+                    "path": "/:orderId",
+                    "description": "Fetches details of a specific order.",
+                    "auth_required": true
+                },
+                {
+                    "method": "POST",
+                    "path": "/:orderId/cancel",
+                    "description": "Cancels an order, replenishes stock, and processes refunds if applicable.",
+                    "payload": {
+                        "cancellationReason": "string"
+                    },
+                    "auth_required": true
+                },
+                {
+                    "method": "GET",
+                    "path": "/invoice/:orderId",
+                    "description": "Downloads the generated invoice PDF for an order.",
+                    "auth_required": true
+                },
+                {
+                    "method": "GET",
+                    "path": "/:orderId/label",
+                    "description": "Fetches the shipping label for an order (via Shiprocket).",
+                    "auth_required": true
+                }
+            ]
+        },
+        "Products": {
+            "prefix": "/products",
+            "endpoints": [
+                {
+                    "method": "GET",
+                    "path": "/",
+                    "description": "Fetches all public products."
+                },
+                {
+                    "method": "GET",
+                    "path": "/seller/:uid",
+                    "description": "Fetches all products for a specific seller."
+                },
+                {
+                    "method": "GET",
+                    "path": "/:id",
+                    "description": "Fetches details of a single product by ID."
+                },
+                {
+                    "method": "PUT",
+                    "path": "/:id",
+                    "description": "Updates details of a product.",
+                    "payload": {
+                        "name": "string",
+                        "price": "number",
+                        "stock": "number",
+                        "description": "string"
+                    },
+                    "auth_required": true
+                },
+                {
+                    "method": "DELETE",
+                    "path": "/:id",
+                    "description": "Deletes a product.",
+                    "auth_required": true
+                }
+            ]
+        },
+        "Seller": {
+            "prefix": "/seller",
+            "endpoints": [
+                {
+                    "method": "GET",
+                    "path": "/:uid/public-profile",
+                    "description": "Fetches the public profile data for a seller."
+                },
+                {
+                    "method": "GET",
+                    "path": "/:uid/dashboard-data",
+                    "description": "Fetches comprehensive dashboard statistics and order/product data for the seller.",
+                    "auth_required": true
+                },
+                {
+                    "method": "POST",
+                    "path": "/product/add",
+                    "description": "Adds a new product to the seller's catalog.",
+                    "payload": {
+                        "name": "string",
+                        "price": "number",
+                        "category": "string",
+                        "stock": "number",
+                        "images": "array of strings (URLs)"
+                    },
+                    "auth_required": true
+                },
+                {
+                    "method": "POST",
+                    "path": "/pickup-address",
+                    "description": "Creates a pickup address for shipping integration.",
+                    "auth_required": true
+                },
+                {
+                    "method": "POST",
+                    "path": "/correction-request",
+                    "description": "Submits a request to correct seller details after rejection.",
+                    "auth_required": true
+                },
+                {
+                    "method": "POST",
+                    "path": "/edit-request",
+                    "description": "Submits a request to edit already approved seller profile data.",
+                    "auth_required": true
+                },
+                {
+                    "method": "PUT",
+                    "path": "/order/:id/status",
+                    "description": "Updates the status of an order (e.g., to Shipped).",
+                    "payload": {
+                        "status": "string"
+                    },
+                    "auth_required": true
+                },
+                {
+                    "method": "PUT",
+                    "path": "/:uid/notification-seen",
+                    "description": "Marks a seller notification as seen.",
+                    "auth_required": true
+                }
+            ]
+        },
+        "Consumer": {
+            "prefix": "/consumer",
+            "endpoints": [
+                {
+                    "method": "GET",
+                    "path": "/:uid/cart",
+                    "description": "Gets the user's shopping cart.",
+                    "auth_required": true
+                },
+                {
+                    "method": "POST",
+                    "path": "/:uid/cart",
+                    "description": "Updates the user's shopping cart items.",
+                    "payload": {
+                        "cartItems": "array of objects"
+                    },
+                    "auth_required": true
+                },
+                {
+                    "method": "GET",
+                    "path": "/:uid/addresses",
+                    "description": "Gets saved addresses for the consumer.",
+                    "auth_required": true
+                },
+                {
+                    "method": "POST",
+                    "path": "/:uid/address",
+                    "description": "Saves a new shipping address.",
+                    "auth_required": true
+                },
+                {
+                    "method": "DELETE",
+                    "path": "/:uid/address/:addressId",
+                    "description": "Deletes a saved address.",
+                    "auth_required": true
+                },
+                {
+                    "method": "GET",
+                    "path": "/:uid/profile",
+                    "description": "Gets the consumer profile details.",
+                    "auth_required": true
+                },
+                {
+                    "method": "POST",
+                    "path": "/:uid/profile",
+                    "description": "Updates the consumer profile.",
+                    "auth_required": true
+                },
+                {
+                    "method": "DELETE",
+                    "path": "/:uid/account",
+                    "description": "Deletes the consumer's account.",
+                    "auth_required": true
+                },
+                {
+                    "method": "GET",
+                    "path": "/:uid/wishlist",
+                    "description": "Gets the user's wishlist.",
+                    "auth_required": true
+                },
+                {
+                    "method": "POST",
+                    "path": "/:uid/wishlist/add",
+                    "description": "Adds a product to the wishlist.",
+                    "auth_required": true
+                },
+                {
+                    "method": "DELETE",
+                    "path": "/:uid/wishlist/:productId",
+                    "description": "Removes a product from the wishlist.",
+                    "auth_required": true
+                }
+            ]
+        },
+        "Admin": {
+            "prefix": "/admin",
+            "endpoints": [
+                {
+                    "method": "GET",
+                    "path": "/stats",
+                    "description": "Fetches overall system statistics for the admin dashboard.",
+                    "auth_required": true
+                },
+                {
+                    "method": "GET",
+                    "path": "/sellers",
+                    "description": "Fetches pending seller applications.",
+                    "auth_required": true
+                },
+                {
+                    "method": "POST",
+                    "path": "/seller/:uid/approve",
+                    "description": "Approves a seller application.",
+                    "auth_required": true
+                },
+                {
+                    "method": "POST",
+                    "path": "/seller/:uid/reject",
+                    "description": "Rejects a seller application.",
+                    "auth_required": true
+                },
+                {
+                    "method": "POST",
+                    "path": "/seller/:uid/block",
+                    "description": "Blocks an existing seller.",
+                    "auth_required": true
+                },
+                {
+                    "method": "GET",
+                    "path": "/products",
+                    "description": "Fetches all products over the platform.",
+                    "auth_required": true
+                },
+                {
+                    "method": "GET",
+                    "path": "/orders",
+                    "description": "Fetches all platform orders.",
+                    "auth_required": true
+                },
+                {
+                    "method": "GET",
+                    "path": "/reviews",
+                    "description": "Fetches all system reviews.",
+                    "auth_required": true
+                }
+            ]
+        }
+    }
+}

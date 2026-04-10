@@ -1,4 +1,4 @@
-// ─── OrdersScreen.js ───────────────────────────────────────────────────────
+﻿// ─── OrdersScreen.js ───────────────────────────────────────────────────────
 // Gudkart — Expo Go compatible
 //
 // Features:
@@ -10,12 +10,13 @@
 //       - Delivery timeline progress bar
 //       - Total amount
 //       - Action buttons: Track / Reorder / Rate / Return
-//   • Empty state per filter tab
-//   • Animated card entry (stagger fade-in)
-//   • Order Detail bottom sheet (inline expand)
+//   • Real API data via orderService
+//   • Loading skeleton + error + pull-to-refresh
+//   • Cancel order with confirmation
+//   • Navigate to OrderDetailScreen on card/detail press
 // ──────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -28,147 +29,83 @@ import {
     Animated,
     Platform,
     Alert,
-    Modal,
-    Pressable,
+    ActivityIndicator,
+    RefreshControl,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../../components/SafeLinearGradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import useTheme from '../../hooks/useTheme';
+import { useAuth } from '../../context/AuthContext';
+import orderService from '../../services/api/orderService';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
-// ─── Mock Orders Data ──────────────────────────────────────────────────────
-const ORDERS = [
-    {
-        id: 'GK-2025-8821',
-        date: '28 Mar 2025',
-        status: 'delivered',
-        deliveredDate: '30 Mar 2025',
-        items: [
-            { name: 'Gold Watch Pro', emoji: '⌚', qty: 1, price: 8999 },
-            { name: 'Leather Wallet', emoji: '👛', qty: 1, price: 1299 },
-        ],
-        total: 10298,
-        savings: 4701,
-        address: 'Rahul Mehta, 42 MG Road, Bengaluru - 560001',
-        payment: 'UPI · GPay',
-        timeline: [
-            { label: 'Ordered', done: true, date: '28 Mar' },
-            { label: 'Packed', done: true, date: '28 Mar' },
-            { label: 'Shipped', done: true, date: '29 Mar' },
-            { label: 'Delivered', done: true, date: '30 Mar' },
-        ],
-        canReturn: true,
-        canRate: true,
-    },
-    {
-        id: 'GK-2025-8754',
-        date: '22 Mar 2025',
-        status: 'active',
-        statusLabel: 'Out for Delivery',
-        estimatedDate: 'Today by 8 PM',
-        items: [
-            { name: 'Sony WH-1000XM5', emoji: '🎧', qty: 1, price: 18999 },
-        ],
-        total: 18999,
-        savings: 10991,
-        address: 'Rahul Mehta, 42 MG Road, Bengaluru - 560001',
-        payment: 'Credit Card · HDFC',
-        timeline: [
-            { label: 'Ordered', done: true, date: '22 Mar' },
-            { label: 'Packed', done: true, date: '23 Mar' },
-            { label: 'Shipped', done: true, date: '24 Mar' },
-            { label: 'Delivered', done: false, date: 'Today' },
-        ],
-        canTrack: true,
-    },
-    {
-        id: 'GK-2025-8690',
-        date: '15 Mar 2025',
-        status: 'active',
-        statusLabel: 'Processing',
-        estimatedDate: '2 Apr 2025',
-        items: [
-            { name: 'Diamond Pendant', emoji: '💎', qty: 1, price: 12500 },
-            { name: 'Silk Kurta Set', emoji: '👗', qty: 2, price: 6400 },
-        ],
-        total: 18900,
-        savings: 7600,
-        address: 'Rahul Mehta, 42 MG Road, Bengaluru - 560001',
-        payment: 'Net Banking · SBI',
-        timeline: [
-            { label: 'Ordered', done: true, date: '15 Mar' },
-            { label: 'Packed', done: true, date: '16 Mar' },
-            { label: 'Shipped', done: false, date: 'Soon' },
-            { label: 'Delivered', done: false, date: '2 Apr' },
-        ],
-        canTrack: true,
-    },
-    {
-        id: 'GK-2025-8541',
-        date: '8 Mar 2025',
-        status: 'delivered',
-        deliveredDate: '11 Mar 2025',
-        items: [
-            { name: 'Air Max Prestige', emoji: '👟', qty: 1, price: 4299 },
-        ],
-        total: 4299,
-        savings: 2701,
-        address: 'Rahul Mehta, 42 MG Road, Bengaluru - 560001',
-        payment: 'UPI · PhonePe',
-        timeline: [
-            { label: 'Ordered', done: true, date: '8 Mar' },
-            { label: 'Packed', done: true, date: '9 Mar' },
-            { label: 'Shipped', done: true, date: '10 Mar' },
-            { label: 'Delivered', done: true, date: '11 Mar' },
-        ],
-        canReturn: true,
-        canRate: true,
-    },
-    {
-        id: 'GK-2025-8312',
-        date: '1 Mar 2025',
-        status: 'cancelled',
-        cancelledDate: '1 Mar 2025',
-        cancelReason: 'Cancelled by user',
-        items: [
-            { name: 'MacBook Air M3', emoji: '💻', qty: 1, price: 114900 },
-        ],
-        total: 114900,
-        savings: 15000,
-        address: 'Rahul Mehta, 42 MG Road, Bengaluru - 560001',
-        payment: 'Credit Card · ICICI',
-        timeline: [
-            { label: 'Ordered', done: true, date: '1 Mar' },
-            { label: 'Cancelled', done: true, date: '1 Mar' },
-        ],
-        refundStatus: 'Refund processed · ₹1,14,900',
-        canReorder: true,
-    },
-    {
-        id: 'GK-2025-7988',
-        date: '18 Feb 2025',
-        status: 'delivered',
-        deliveredDate: '21 Feb 2025',
-        items: [
-            { id: 'oi1', name: 'Smart Speaker', emoji: '🔊', qty: 1, price: 5499 },
-            { id: 'oi2', name: 'Indoor Plant Pot', emoji: '🪴', qty: 2, price: 1398 },
-        ],
-        total: 6897,
-        savings: 3203,
-        address: 'Rahul Mehta, 42 MG Road, Bengaluru - 560001',
-        payment: 'COD',
-        timeline: [
-            { label: 'Ordered', done: true, date: '18 Feb' },
-            { label: 'Packed', done: true, date: '19 Feb' },
-            { label: 'Shipped', done: true, date: '20 Feb' },
-            { label: 'Delivered', done: true, date: '21 Feb' },
-        ],
-        canReturn: false,
-        canRate: true,
-    },
-];
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
+const formatPrice = (p) => `₹${Number(p).toLocaleString('en-IN')}`;
+
+/**
+ * Normalise the raw API order shape so the UI always sees a consistent object.
+ * Adjust field mappings here if your backend returns different key names.
+ */
+const normaliseOrder = (raw) => ({
+    id: raw._id ?? raw.id ?? '',
+    date: raw.createdAt
+        ? new Date(raw.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : raw.date ?? '',
+    // Map backend status → UI status bucket
+    status: (() => {
+        const s = (raw.status ?? '').toLowerCase();
+        if (['cancelled', 'canceled'].includes(s)) return 'cancelled';
+        if (s === 'delivered') return 'delivered';
+        return 'active'; // pending / processing / shipped / out_for_delivery
+    })(),
+    statusLabel: raw.statusLabel ?? raw.status ?? '',
+    estimatedDate: raw.estimatedDelivery ?? raw.estimatedDate ?? '',
+    deliveredDate: raw.deliveredAt
+        ? new Date(raw.deliveredAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : raw.deliveredDate ?? '',
+    cancelledDate: raw.cancelledAt
+        ? new Date(raw.cancelledAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : raw.cancelledDate ?? '',
+    cancelReason: raw.cancellationReason ?? raw.cancelReason ?? '',
+    items: (raw.items ?? []).map((item) => ({
+        id: item._id ?? item.id ?? item.productId ?? '',
+        name: item.name ?? item.productName ?? '',
+        emoji: item.emoji ?? '📦',
+        qty: item.qty ?? item.quantity ?? 1,
+        price: item.price ?? 0,
+        desc: item.desc ?? item.description ?? '',
+    })),
+    total: raw.total ?? raw.totalAmount ?? 0,
+    savings: raw.savings ?? raw.discount ?? 0,
+    address: (() => {
+        const s = raw.shippingDetails ?? {};
+        if (raw.address) return raw.address;
+        const parts = [s.name, s.address, s.city, s.state ? `${s.state} - ${s.pincode}` : s.pincode].filter(Boolean);
+        return parts.join(', ');
+    })(),
+    payment: raw.payment ?? raw.paymentMethod ?? '',
+    timeline: (raw.timeline ?? []).map((t) => ({
+        label: t.label ?? t.status ?? '',
+        date: t.date ?? t.timestamp ?? '',
+        done: t.done ?? t.completed ?? false,
+        desc: t.desc ?? t.description ?? '',
+    })),
+    refundStatus: raw.refundStatus ?? '',
+    // Capabilities derived from status
+    canTrack: (() => {
+        const s = (raw.status ?? '').toLowerCase();
+        return ['shipped', 'out_for_delivery', 'processing'].includes(s);
+    })(),
+    canRate: (raw.status ?? '').toLowerCase() === 'delivered',
+    canReturn: raw.canReturn ?? false,
+    canReorder: ['cancelled', 'delivered'].includes((raw.status ?? '').toLowerCase()),
+    canCancel: ['pending', 'processing'].includes((raw.status ?? '').toLowerCase()),
+});
+
+// ─── Config ────────────────────────────────────────────────────────────────
 
 const FILTER_TABS = [
     { id: 'all', label: 'All', icon: 'layers-outline' },
@@ -178,28 +115,13 @@ const FILTER_TABS = [
 ];
 
 const STATUS_CONFIG = {
-    active: {
-        color: '#60A5FA',
-        bg: '#60A5FA20',
-        icon: 'time-outline',
-    },
-    delivered: {
-        color: '#4ADE80',
-        bg: '#4ADE8020',
-        icon: 'checkmark-circle-outline',
-    },
-    cancelled: {
-        color: '#F87171',
-        bg: '#F8717120',
-        icon: 'close-circle-outline',
-    },
+    active: { color: '#60A5FA', bg: '#60A5FA20', icon: 'time-outline' },
+    delivered: { color: '#4ADE80', bg: '#4ADE8020', icon: 'checkmark-circle-outline' },
+    cancelled: { color: '#F87171', bg: '#F8717120', icon: 'close-circle-outline' },
 };
-
-const formatPrice = (p) => `₹${p.toLocaleString('en-IN')}`;
 
 // ─── Timeline Step ─────────────────────────────────────────────────────────
 const TimelineStep = ({ step, index, total, colors, isCancelled }) => {
-    const isLast = index === total - 1;
     const dotColor = step.done
         ? isCancelled && index > 0 ? '#F87171' : colors.success
         : colors.border;
@@ -207,21 +129,12 @@ const TimelineStep = ({ step, index, total, colors, isCancelled }) => {
 
     return (
         <View style={styles.timelineStep}>
-            {/* Line above dot */}
-            {index > 0 && (
-                <View style={[styles.timelineLine, { backgroundColor: lineColor }]} />
-            )}
-            {/* Dot */}
+            {index > 0 && <View style={[styles.timelineLine, { backgroundColor: lineColor }]} />}
             <View style={[styles.timelineDot, { backgroundColor: dotColor, borderColor: dotColor }]}>
                 {step.done && (
-                    <Ionicons
-                        name={isCancelled && index > 0 ? 'close' : 'checkmark'}
-                        size={8}
-                        color="#fff"
-                    />
+                    <Ionicons name={isCancelled && index > 0 ? 'close' : 'checkmark'} size={8} color="#fff" />
                 )}
             </View>
-            {/* Label */}
             <Text style={[styles.timelineLabel, { color: step.done ? colors.textSecondary : colors.textMuted }]}>
                 {step.label}
             </Text>
@@ -232,111 +145,44 @@ const TimelineStep = ({ step, index, total, colors, isCancelled }) => {
     );
 };
 
-// ─── Order Detail Modal ────────────────────────────────────────────────────
-const OrderDetailModal = ({ order, visible, onClose, colors, gradients }) => {
-    if (!order) return null;
-    const cfg = STATUS_CONFIG[order.status];
-    const isCancelled = order.status === 'cancelled';
+// ─── Loading Skeleton ──────────────────────────────────────────────────────
+const SkeletonCard = ({ colors }) => {
+    const pulse = useRef(new Animated.Value(0.4)).current;
+    useEffect(() => {
+        Animated.loop(
+            Animated.sequence([
+                Animated.timing(pulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+                Animated.timing(pulse, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+            ])
+        ).start();
+    }, []);
 
+    const bg = { backgroundColor: colors.border, borderRadius: 8 };
     return (
-        <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-            <Pressable style={styles.modalOverlay} onPress={onClose}>
-                <Pressable style={[styles.detailSheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
-
-                    <ScrollView showsVerticalScrollIndicator={false}>
-                        {/* Order ID + status */}
-                        <View style={styles.detailHeader}>
-                            <View>
-                                <Text style={[styles.detailOrderId, { color: colors.textPrimary }]}>{order.id}</Text>
-                                <Text style={[styles.detailDate, { color: colors.textMuted }]}>Placed on {order.date}</Text>
-                            </View>
-                            <View style={[styles.statusPill, { backgroundColor: cfg.bg }]}>
-                                <Ionicons name={cfg.icon} size={13} color={cfg.color} />
-                                <Text style={[styles.statusText, { color: cfg.color }]}>
-                                    {order.statusLabel ?? order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                                </Text>
-                            </View>
-                        </View>
-
-                        {/* Items */}
-                        <Text style={[styles.detailSectionTitle, { color: colors.textMuted }]}>ITEMS</Text>
-                        {order.items.map((item, i) => (
-                            <View key={i} style={[styles.detailItem, { borderBottomColor: colors.divider, borderBottomWidth: i < order.items.length - 1 ? 1 : 0 }]}>
-                                <View style={[styles.detailItemEmoji, { backgroundColor: colors.card }]}>
-                                    <Text style={{ fontSize: 24 }}>{item.emoji}</Text>
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={[styles.detailItemName, { color: colors.textPrimary }]}>{item.name}</Text>
-                                    <Text style={[styles.detailItemQty, { color: colors.textMuted }]}>Qty: {item.qty}</Text>
-                                </View>
-                                <Text style={[styles.detailItemPrice, { color: colors.accent }]}>{formatPrice(item.price)}</Text>
-                            </View>
-                        ))}
-
-                        {/* Timeline */}
-                        <Text style={[styles.detailSectionTitle, { color: colors.textMuted, marginTop: 16 }]}>TIMELINE</Text>
-                        <View style={styles.timelineRow}>
-                            {order.timeline.map((step, i) => (
-                                <TimelineStep
-                                    key={i}
-                                    step={step}
-                                    index={i}
-                                    total={order.timeline.length}
-                                    colors={colors}
-                                    isCancelled={isCancelled}
-                                />
-                            ))}
-                        </View>
-
-                        {/* Address + Payment */}
-                        <Text style={[styles.detailSectionTitle, { color: colors.textMuted, marginTop: 16 }]}>DELIVERY ADDRESS</Text>
-                        <View style={[styles.detailInfoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <Ionicons name="location-outline" size={16} color={colors.primary} />
-                            <Text style={[styles.detailInfoText, { color: colors.textSecondary }]}>{order.address}</Text>
-                        </View>
-
-                        <Text style={[styles.detailSectionTitle, { color: colors.textMuted, marginTop: 12 }]}>PAYMENT</Text>
-                        <View style={[styles.detailInfoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <Ionicons name="card-outline" size={16} color={colors.primary} />
-                            <Text style={[styles.detailInfoText, { color: colors.textSecondary }]}>{order.payment}</Text>
-                        </View>
-
-                        {/* Price summary */}
-                        <Text style={[styles.detailSectionTitle, { color: colors.textMuted, marginTop: 12 }]}>PRICE SUMMARY</Text>
-                        <View style={[styles.priceSummary, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <View style={styles.summaryRow}>
-                                <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Order Total</Text>
-                                <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>{formatPrice(order.total)}</Text>
-                            </View>
-                            <View style={styles.summaryRow}>
-                                <Text style={[styles.summaryLabel, { color: colors.success }]}>You Saved</Text>
-                                <Text style={[styles.summaryValue, { color: colors.success }]}>-{formatPrice(order.savings)}</Text>
-                            </View>
-                            <View style={[styles.summaryRow, { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 10, marginTop: 4 }]}>
-                                <Text style={[styles.summaryLabel, { color: colors.textPrimary, fontWeight: '700' }]}>Total Paid</Text>
-                                <Text style={[styles.totalPaid, { color: colors.accent }]}>{formatPrice(order.total)}</Text>
-                            </View>
-                        </View>
-
-                        {/* Refund info */}
-                        {order.refundStatus && (
-                            <View style={[styles.refundCard, { backgroundColor: colors.success + '15', borderColor: colors.success + '40' }]}>
-                                <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-                                <Text style={[styles.refundText, { color: colors.success }]}>{order.refundStatus}</Text>
-                            </View>
-                        )}
-
-                        <View style={{ height: 24 }} />
-                    </ScrollView>
-                </Pressable>
-            </Pressable>
-        </Modal>
+        <Animated.View style={[styles.orderCard, { backgroundColor: colors.card, borderColor: colors.border, opacity: pulse }]}>
+            <View style={styles.cardTopRow}>
+                <View style={[bg, { width: 120, height: 16 }]} />
+                <View style={[bg, { width: 70, height: 24, borderRadius: 12 }]} />
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                {[1, 2].map((k) => <View key={k} style={[bg, { width: 40, height: 40, borderRadius: 12 }]} />)}
+                <View style={{ flex: 1, gap: 6 }}>
+                    <View style={[bg, { height: 12, width: '80%' }]} />
+                    <View style={[bg, { height: 10, width: '50%' }]} />
+                </View>
+            </View>
+            <View style={[bg, { height: 4, marginBottom: 12, borderRadius: 2 }]} />
+            <View style={[styles.cardDivider, { backgroundColor: colors.divider }]} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                <View style={[bg, { width: 80, height: 20 }]} />
+                <View style={[bg, { width: 100, height: 32, borderRadius: 8 }]} />
+            </View>
+        </Animated.View>
     );
 };
 
 // ─── Order Card ────────────────────────────────────────────────────────────
-const OrderCard = ({ order, colors, gradients, onPress, animDelay, navigation }) => {
+const OrderCard = ({ order, colors, gradients, onPress, animDelay, navigation, onCancel }) => {
     const cfg = STATUS_CONFIG[order.status];
     const isCancelled = order.status === 'cancelled';
     const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -349,10 +195,24 @@ const OrderCard = ({ order, colors, gradients, onPress, animDelay, navigation })
         ]).start();
     }, []);
 
-    // Progress bar — count done steps
     const doneSteps = order.timeline.filter((s) => s.done).length;
     const totalSteps = order.timeline.length;
-    const progress = doneSteps / totalSteps;
+    const progress = totalSteps > 0 ? doneSteps / totalSteps : 0;
+
+    const handleCancel = () => {
+        Alert.alert(
+            'Cancel Order',
+            `Are you sure you want to cancel order ${order.id}?`,
+            [
+                { text: 'No', style: 'cancel' },
+                {
+                    text: 'Yes, Cancel',
+                    style: 'destructive',
+                    onPress: () => onCancel(order.id),
+                },
+            ]
+        );
+    };
 
     return (
         <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
@@ -370,7 +230,9 @@ const OrderCard = ({ order, colors, gradients, onPress, animDelay, navigation })
                     <View style={[styles.statusPill, { backgroundColor: cfg.bg }]}>
                         <Ionicons name={cfg.icon} size={12} color={cfg.color} />
                         <Text style={[styles.statusText, { color: cfg.color }]}>
-                            {order.statusLabel ?? order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                            {order.statusLabel
+                                ? order.statusLabel.charAt(0).toUpperCase() + order.statusLabel.slice(1)
+                                : order.status.charAt(0).toUpperCase() + order.status.slice(1)}
                         </Text>
                     </View>
                 </View>
@@ -379,11 +241,8 @@ const OrderCard = ({ order, colors, gradients, onPress, animDelay, navigation })
                 <View style={styles.itemsPreview}>
                     {order.items.slice(0, 3).map((item, i) => (
                         <View
-                            key={i}
-                            style={[
-                                styles.emojiChip,
-                                { backgroundColor: colors.cardAlt, borderColor: colors.border, marginLeft: i > 0 ? -8 : 0 },
-                            ]}
+                            key={item.id || i}
+                            style={[styles.emojiChip, { backgroundColor: colors.cardAlt, borderColor: colors.border, marginLeft: i > 0 ? -8 : 0 }]}
                         >
                             <Text style={{ fontSize: 20 }}>{item.emoji}</Text>
                         </View>
@@ -407,7 +266,7 @@ const OrderCard = ({ order, colors, gradients, onPress, animDelay, navigation })
                 {!isCancelled && (
                     <View style={styles.progressSection}>
                         <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-                            <Animated.View
+                            <View
                                 style={[
                                     styles.progressFill,
                                     {
@@ -420,7 +279,7 @@ const OrderCard = ({ order, colors, gradients, onPress, animDelay, navigation })
                         <Text style={[styles.progressLabel, { color: colors.textMuted }]}>
                             {order.status === 'delivered'
                                 ? `✅ Delivered on ${order.deliveredDate}`
-                                : `🚚 Estimated: ${order.estimatedDate}`}
+                                : order.estimatedDate ? `🚚 Estimated: ${order.estimatedDate}` : '🚚 In progress'}
                         </Text>
                     </View>
                 )}
@@ -436,7 +295,7 @@ const OrderCard = ({ order, colors, gradients, onPress, animDelay, navigation })
                 {/* ── Divider ── */}
                 <View style={[styles.cardDivider, { backgroundColor: colors.divider }]} />
 
-                {/* ── Bottom row — total + actions ── */}
+                {/* ── Bottom row ── */}
                 <View style={styles.cardBottomRow}>
                     <View>
                         <Text style={[styles.totalLabel, { color: colors.textMuted }]}>Total</Text>
@@ -444,26 +303,40 @@ const OrderCard = ({ order, colors, gradients, onPress, animDelay, navigation })
                     </View>
 
                     <View style={styles.actionBtns}>
+                        {/* Cancel — only for pending/processing */}
+                        {order.canCancel && (
+                            <TouchableOpacity
+                                style={[styles.actionBtn, { borderColor: '#F8717160', backgroundColor: '#F8717115' }]}
+                                onPress={handleCancel}
+                                activeOpacity={0.8}
+                            >
+                                <Ionicons name="close-circle-outline" size={13} color="#F87171" />
+                                <Text style={[styles.actionBtnText, { color: '#F87171' }]}>Cancel</Text>
+                            </TouchableOpacity>
+                        )}
+
                         {order.canTrack && (
                             <TouchableOpacity
                                 style={[styles.actionBtn, { borderColor: colors.primary + '60', backgroundColor: colors.primary + '15' }]}
-                                onPress={() => Alert.alert('Track Order', `Tracking ${order.id}...`)}
+                                onPress={() => navigation.navigate('OrderDetail', { orderId: order.id })}
                                 activeOpacity={0.8}
                             >
                                 <Ionicons name="navigate-outline" size={13} color={colors.primary} />
                                 <Text style={[styles.actionBtnText, { color: colors.primary }]}>Track</Text>
                             </TouchableOpacity>
                         )}
+
                         {order.canRate && (
                             <TouchableOpacity
                                 style={[styles.actionBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
-                                onPress={() => navigation.navigate('OrderDetail', { order })}
+                                onPress={() => navigation.navigate('OrderDetail', { orderId: order.id })}
                                 activeOpacity={0.8}
                             >
                                 <Ionicons name="star-outline" size={13} color={colors.accent} />
                                 <Text style={[styles.actionBtnText, { color: colors.accent }]}>Rate</Text>
                             </TouchableOpacity>
                         )}
+
                         {order.canReturn && (
                             <TouchableOpacity
                                 style={[styles.actionBtn, { borderColor: colors.textMuted + '60', backgroundColor: colors.card }]}
@@ -474,25 +347,21 @@ const OrderCard = ({ order, colors, gradients, onPress, animDelay, navigation })
                                 <Text style={[styles.actionBtnText, { color: colors.textMuted }]}>Return</Text>
                             </TouchableOpacity>
                         )}
+
                         {order.canReorder && (
                             <TouchableOpacity
                                 style={styles.reorderBtn}
                                 onPress={() => Alert.alert('Reorder', `Reordering items from ${order.id}`)}
                                 activeOpacity={0.8}
                             >
-                                <LinearGradient
-                                    colors={gradients.button}
-                                    style={styles.reorderGradient}
-                                    start={{ x: 0, y: 0 }}
-                                    end={{ x: 1, y: 0 }}
-                                >
+                                <LinearGradient colors={gradients.button} style={styles.reorderGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                                     <Ionicons name="refresh-outline" size={13} color="#fff" />
                                     <Text style={styles.reorderText}>Reorder</Text>
                                 </LinearGradient>
                             </TouchableOpacity>
                         )}
 
-                        {/* View details chevron */}
+                        {/* View details */}
                         <TouchableOpacity
                             style={[styles.actionBtn, { borderColor: colors.border, backgroundColor: colors.cardAlt }]}
                             onPress={onPress}
@@ -531,36 +400,98 @@ const EmptyState = ({ filter, colors, onShop }) => {
     );
 };
 
+// ─── Error State ───────────────────────────────────────────────────────────
+const ErrorState = ({ colors, onRetry }) => (
+    <View style={styles.emptyState}>
+        <Text style={styles.emptyEmoji}>⚠️</Text>
+        <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>Something went wrong</Text>
+        <Text style={[styles.emptySub, { color: colors.textMuted }]}>We couldn't load your orders. Please try again.</Text>
+        <TouchableOpacity style={styles.shopBtn} onPress={onRetry} activeOpacity={0.85}>
+            <Text style={[styles.shopBtnText, { color: colors.accent }]}>Retry</Text>
+        </TouchableOpacity>
+    </View>
+);
+
 // ─── Main Screen ───────────────────────────────────────────────────────────
 const OrdersScreen = ({ navigation }) => {
     const { colors, gradients, isDark } = useTheme();
+    const { uid } = useAuth();
+
+    const [orders, setOrders] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState(null);
     const [activeFilter, setActiveFilter] = useState('all');
-    const [selectedOrder, setSelectedOrder] = useState(null);
-    const [showDetail, setShowDetail] = useState(false);
+    const [cancellingId, setCancellingId] = useState(null);
 
+    // ── Fetch orders ────────────────────────────────────────────────────────
+    const fetchOrders = useCallback(async (isRefresh = false) => {
+        if (isRefresh) setRefreshing(true);
+        else setLoading(true);
+        setError(null);
+
+        try {
+            const data = await orderService.getUserOrders(uid);
+            // API may return { orders: [...] } or a plain array
+            const raw = Array.isArray(data) ? data : (data.orders ?? []);
+            setOrders(raw.map(normaliseOrder));
+        } catch (err) {
+            console.error('Failed to load orders:', err);
+            setError(err);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    }, [uid]);
+
+    useEffect(() => {
+        fetchOrders();
+    }, [fetchOrders]);
+
+    // ── Cancel order ────────────────────────────────────────────────────────
+    const handleCancel = async (orderId) => {
+        setCancellingId(orderId);
+        try {
+            await orderService.cancelOrder(orderId, 'Cancelled by user');
+            // Optimistically update the local list
+            setOrders((prev) =>
+                prev.map((o) =>
+                    o.id === orderId
+                        ? { ...o, status: 'cancelled', statusLabel: 'Cancelled', canCancel: false, canTrack: false }
+                        : o
+                )
+            );
+            Alert.alert('Order Cancelled', `Order ${orderId} has been cancelled successfully.`);
+        } catch (err) {
+            Alert.alert('Error', 'Failed to cancel the order. Please try again.');
+        } finally {
+            setCancellingId(null);
+        }
+    };
+
+    // ── Filtered list ───────────────────────────────────────────────────────
     const filteredOrders = activeFilter === 'all'
-        ? ORDERS
-        : ORDERS.filter((o) => o.status === activeFilter);
+        ? orders
+        : orders.filter((o) => o.status === activeFilter);
 
-    const openDetail = (order) => {
-        navigation.navigate('OrderDetail', { order });
-    };
-
-    // Count per filter
     const counts = {
-        all: ORDERS.length,
-        active: ORDERS.filter((o) => o.status === 'active').length,
-        delivered: ORDERS.filter((o) => o.status === 'delivered').length,
-        cancelled: ORDERS.filter((o) => o.status === 'cancelled').length,
+        all: orders.length,
+        active: orders.filter((o) => o.status === 'active').length,
+        delivered: orders.filter((o) => o.status === 'delivered').length,
+        cancelled: orders.filter((o) => o.status === 'cancelled').length,
     };
 
-    const headerHeight = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 60 : 60;
+    // Navigate to OrderDetailScreen, pass orderId so it can fetch fresh data
+    const openDetail = (order) => {
+        navigation.navigate('OrderDetail', { orderId: order.id });
+    };
 
+    // ── Render ──────────────────────────────────────────────────────────────
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
 
-            {/* ── Header ──────────────────────────────────────────────────────── */}
+            {/* ── Header ── */}
             <SafeAreaView edges={['top']} style={{ backgroundColor: colors.surface }}>
                 <View style={[styles.header, { borderBottomColor: colors.border }]}>
                     <TouchableOpacity
@@ -572,7 +503,9 @@ const OrdersScreen = ({ navigation }) => {
                     </TouchableOpacity>
                     <View style={{ flex: 1 }}>
                         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>My Orders</Text>
-                        <Text style={[styles.headerSub, { color: colors.textMuted }]}>{counts.all} orders total</Text>
+                        <Text style={[styles.headerSub, { color: colors.textMuted }]}>
+                            {loading ? 'Loading…' : `${counts.all} orders total`}
+                        </Text>
                     </View>
                     <TouchableOpacity
                         style={[styles.searchIconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -582,12 +515,8 @@ const OrdersScreen = ({ navigation }) => {
                     </TouchableOpacity>
                 </View>
 
-                {/* ── Filter Tabs ─────────────────────────────────────────────── */}
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.filterTabs}
-                >
+                {/* ── Filter Tabs ── */}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterTabs}>
                     {FILTER_TABS.map((tab) => {
                         const isActive = activeFilter === tab.id;
                         return (
@@ -620,8 +549,14 @@ const OrdersScreen = ({ navigation }) => {
                 </ScrollView>
             </SafeAreaView>
 
-            {/* ── Orders List ─────────────────────────────────────────────────── */}
-            {filteredOrders.length === 0 ? (
+            {/* ── Content ── */}
+            {loading ? (
+                <ScrollView contentContainerStyle={styles.listContent}>
+                    {[1, 2, 3].map((k) => <SkeletonCard key={k} colors={colors} />)}
+                </ScrollView>
+            ) : error ? (
+                <ErrorState colors={colors} onRetry={() => fetchOrders()} />
+            ) : filteredOrders.length === 0 ? (
                 <EmptyState
                     filter={activeFilter}
                     colors={colors}
@@ -633,15 +568,25 @@ const OrdersScreen = ({ navigation }) => {
                     keyExtractor={(o) => o.id}
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.listContent}
-                    renderItem={({ item, index }) => (
-                        <OrderCard
-                            order={item}
-                            colors={colors}
-                            gradients={gradients}
-                            onPress={() => openDetail(item)}
-                            animDelay={index * 80}
-                            navigation={navigation}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={() => fetchOrders(true)}
+                            tintColor={colors.accent}
                         />
+                    }
+                    renderItem={({ item, index }) => (
+                        <View style={{ opacity: cancellingId === item.id ? 0.5 : 1 }}>
+                            <OrderCard
+                                order={item}
+                                colors={colors}
+                                gradients={gradients}
+                                onPress={() => openDetail(item)}
+                                animDelay={index * 80}
+                                navigation={navigation}
+                                onCancel={handleCancel}
+                            />
+                        </View>
                     )}
                     ListFooterComponent={<View style={{ height: 90 }} />}
                 />
@@ -654,7 +599,6 @@ const OrdersScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
     container: { flex: 1 },
 
-    // Header
     header: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -668,35 +612,25 @@ const styles = StyleSheet.create({
     headerSub: { fontSize: 11, fontWeight: '400', marginTop: 1 },
     searchIconBtn: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
 
-    // Filter tabs
     filterTabs: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
     filterTab: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 5,
-        paddingHorizontal: 14,
-        paddingVertical: 8,
-        borderRadius: 20,
-        borderWidth: 1,
+        flexDirection: 'row', alignItems: 'center', gap: 5,
+        paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1,
     },
     filterTabText: { fontSize: 13, fontWeight: '600' },
     filterCount: { borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1 },
     filterCountText: { fontSize: 10, fontWeight: '700' },
 
-    // List
     listContent: { paddingHorizontal: 16, paddingTop: 14, gap: 12 },
 
-    // Order card
     orderCard: { borderRadius: 18, borderWidth: 1, padding: 16 },
     cardTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 },
     orderId: { fontSize: 14, fontWeight: '700', letterSpacing: 0.2 },
     orderDate: { fontSize: 11, marginTop: 2 },
 
-    // Status pill
     statusPill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
     statusText: { fontSize: 11, fontWeight: '700' },
 
-    // Items preview
     itemsPreview: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
     emojiChip: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
     moreChip: {},
@@ -705,43 +639,33 @@ const styles = StyleSheet.create({
     itemNamesText: { fontSize: 12, fontWeight: '500' },
     itemCount: { fontSize: 11, marginTop: 2 },
 
-    // Progress
     progressSection: { marginBottom: 14 },
     progressTrack: { height: 4, borderRadius: 2, overflow: 'hidden', marginBottom: 6 },
     progressFill: { height: '100%', borderRadius: 2 },
     progressLabel: { fontSize: 11 },
 
-    // Refund chip
     refundChip: {
         flexDirection: 'row', alignItems: 'center', gap: 5,
-        borderWidth: 1, borderRadius: 8,
-        paddingHorizontal: 10, paddingVertical: 6,
+        borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
         marginBottom: 12, alignSelf: 'flex-start',
     },
     refundChipText: { fontSize: 11, fontWeight: '600' },
 
-    // Divider
     cardDivider: { height: 1, marginBottom: 12 },
 
-    // Bottom row
     cardBottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     totalLabel: { fontSize: 11 },
     totalValue: { fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
-    actionBtns: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+    actionBtns: { flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' },
     actionBtn: {
         flexDirection: 'row', alignItems: 'center', gap: 4,
-        borderRadius: 8, borderWidth: 1,
-        paddingHorizontal: 10, paddingVertical: 6,
+        borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6,
     },
     actionBtnText: { fontSize: 11, fontWeight: '600' },
     reorderBtn: { borderRadius: 8, overflow: 'hidden' },
-    reorderGradient: {
-        flexDirection: 'row', alignItems: 'center', gap: 4,
-        paddingHorizontal: 12, paddingVertical: 7,
-    },
+    reorderGradient: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7 },
     reorderText: { fontSize: 11, fontWeight: '700', color: '#fff' },
 
-    // Empty
     emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 10 },
     emptyEmoji: { fontSize: 56, marginBottom: 8 },
     emptyTitle: { fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
@@ -749,29 +673,7 @@ const styles = StyleSheet.create({
     shopBtn: { marginTop: 8 },
     shopBtnText: { fontSize: 15, fontWeight: '700' },
 
-    // Detail modal
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
-    detailSheet: {
-        borderTopLeftRadius: 28, borderTopRightRadius: 28,
-        borderWidth: 1,
-        paddingHorizontal: 20,
-        paddingBottom: Platform.OS === 'ios' ? 36 : 24,
-        paddingTop: 12,
-        maxHeight: height * 0.88,
-    },
-    sheetHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-    detailHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 },
-    detailOrderId: { fontSize: 16, fontWeight: '800' },
-    detailDate: { fontSize: 12, marginTop: 3 },
-    detailSectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 10 },
-    detailItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
-    detailItemEmoji: { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-    detailItemName: { fontSize: 13, fontWeight: '600' },
-    detailItemQty: { fontSize: 11, marginTop: 2 },
-    detailItemPrice: { fontSize: 14, fontWeight: '800' },
-
-    // Timeline (horizontal)
-    timelineRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
+    // Timeline (horizontal in modal)
     timelineStep: { flex: 1, alignItems: 'center', gap: 4 },
     timelineLine: { position: 'absolute', left: -50, right: 50, top: 8, height: 2 },
     timelineDot: {
@@ -781,28 +683,6 @@ const styles = StyleSheet.create({
     },
     timelineLabel: { fontSize: 10, fontWeight: '600', textAlign: 'center' },
     timelineDate: { fontSize: 9, textAlign: 'center' },
-
-    detailInfoCard: {
-        flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-        borderRadius: 12, borderWidth: 1,
-        padding: 12, marginBottom: 4,
-    },
-    detailInfoText: { flex: 1, fontSize: 13, lineHeight: 18 },
-
-    // Price summary
-    priceSummary: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 8 },
-    summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    summaryLabel: { fontSize: 13 },
-    summaryValue: { fontSize: 13, fontWeight: '600' },
-    totalPaid: { fontSize: 16, fontWeight: '900' },
-
-    // Refund card
-    refundCard: {
-        flexDirection: 'row', alignItems: 'center', gap: 8,
-        borderRadius: 10, borderWidth: 1,
-        padding: 12, marginTop: 12,
-    },
-    refundText: { fontSize: 13, fontWeight: '600' },
 });
 
 export default OrdersScreen;
