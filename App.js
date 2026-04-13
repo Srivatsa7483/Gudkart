@@ -11,6 +11,7 @@ import { store, persistor } from './src/store/store';
 import AppNavigator from './src/navigation/AppNavigator';
 import { AuthProvider } from './src/context/AuthContext';
 import { NotificationProvider } from './src/context/NotificationContext';
+import { ToastProvider } from './src/components/ToastNotification';
 import { CartProvider } from './src/context/CartContext';
 import { WishlistProvider } from './src/context/WishlistContext';
 
@@ -26,15 +27,17 @@ export default function App() {
             <SafeAreaProvider>
                 <Provider store={store}>
                     <PersistGate loading={<LoadingFallback />} persistor={persistor}>
-                        <AuthProvider>
-                            <NotificationProvider>
-                                <CartProvider>
-                                    <WishlistProvider>
-                                        <AppNavigator />
-                                    </WishlistProvider>
-                                </CartProvider>
-                            </NotificationProvider>
-                        </AuthProvider>
+                        <ToastProvider>
+                            <AuthProvider>
+                                <NotificationProvider>
+                                    <CartProvider>
+                                        <WishlistProvider>
+                                            <AppNavigator />
+                                        </WishlistProvider>
+                                    </CartProvider>
+                                </NotificationProvider>
+                            </AuthProvider>
+                        </ToastProvider>
                     </PersistGate>
                 </Provider>
             </SafeAreaProvider>

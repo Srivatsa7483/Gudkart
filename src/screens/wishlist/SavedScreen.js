@@ -1,4 +1,4 @@
-﻿// ─── SavedScreen.js ────────────────────────────────────────────────────────
+// ─── SavedScreen.js ────────────────────────────────────────────────────────
 // Gudkart — Expo Go compatible
 //
 // Features:
@@ -9,7 +9,7 @@
 //   • Quick Add to Cart from wishlist card
 //   • "Move all to Cart" bulk action
 //   • Price drop badge  (if item is on sale vs when saved)
-//   • Empty state with CTA to Explore
+//   • Empty state with CTA to Home
 //   • Animated heart removal
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -34,6 +34,7 @@ import useTheme from '../../hooks/useTheme';
 import { useToast } from '../../components/ToastNotification';
 import { useCart } from '../../context/CartContext';
 import { useWishlist } from '../../context/WishlistContext';
+import { useAuth } from '../../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 48) / 2;
@@ -289,7 +290,7 @@ const ListCard = ({ item, colors, gradients, onRemove, onAddToCart, onPress }) =
 };
 
 // ─── Empty State ───────────────────────────────────────────────────────────
-const EmptyState = ({ colors, gradients, onExplore }) => (
+const EmptyState = ({ colors, gradients, onStartShopping }) => (
     <View style={styles.emptyState}>
         <View style={[styles.emptyIconCircle, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={styles.emptyEmoji}>💔</Text>
@@ -298,10 +299,10 @@ const EmptyState = ({ colors, gradients, onExplore }) => (
         <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
             Tap the heart icon on any product to save it here for later
         </Text>
-        <TouchableOpacity style={styles.exploreBtn} onPress={onExplore} activeOpacity={0.85}>
+        <TouchableOpacity style={styles.exploreBtn} onPress={onStartShopping} activeOpacity={0.85}>
             <LinearGradient colors={gradients.button} style={styles.exploreBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Ionicons name="search-outline" size={16} color="#fff" />
-                <Text style={styles.exploreBtnText}>Explore Products</Text>
+                <Ionicons name="bag-handle-outline" size={16} color="#fff" />
+                <Text style={styles.exploreBtnText}>Start Shopping</Text>
             </LinearGradient>
         </TouchableOpacity>
     </View>
@@ -310,9 +311,10 @@ const EmptyState = ({ colors, gradients, onExplore }) => (
 // ─── Main Screen ───────────────────────────────────────────────────────────
 const SavedScreen = ({ navigation }) => {
     const { colors, gradients, isDark } = useTheme();
-    const { showToast, ToastComponent } = useToast();
-    const { addToCart } = useCart();
-    const { wishlistItems, removeFromWishlist } = useWishlist();
+    const { isLoggedIn } = useAuth();
+    const { showToast } = useToast();
+    const { addToCart, addMultipleToCart } = useCart();
+    const { wishlistItems, removeFromWishlist, removeMultipleFromWishlist } = useWishlist();
     const [viewMode, setViewMode] = useState('grid');   // 'grid' | 'list'
     const [sortBy, setSortBy] = useState('recent');
     const [showSort, setShowSort] = useState(false);
@@ -343,7 +345,7 @@ const SavedScreen = ({ navigation }) => {
     }, [showToast, addToCart]);
 
     const handleMoveAllToCart = () => {
-        const inStockItems = wishlist.filter((i) => i.inStock);
+        const inStockItems = wishlistItems.filter((i) => i.inStock);
         const inStockCount = inStockItems.length;
         if (inStockCount === 0) {
             showToast({
@@ -361,7 +363,13 @@ const SavedScreen = ({ navigation }) => {
             confirmLabel: 'Move All 🛍️',
             cancelLabel: 'Not now',
             onConfirm: () => {
-                inStockItems.forEach(item => addToCart(item, 1));
+                // Move in-stock items to cart
+                addMultipleToCart(inStockItems.map(item => ({ product: item, quantity: 1 })));
+                
+                // Remove moved items from wishlist
+                const itemIdsToRemove = inStockItems.map(item => item.id);
+                removeMultipleFromWishlist(itemIdsToRemove);
+
                 showToast({
                     type: 'success',
                     title: 'Done! 🎉',
@@ -373,6 +381,37 @@ const SavedScreen = ({ navigation }) => {
     };
 
     const priceDropCount = wishlistItems.filter((i) => i.price < i.savedPrice).length;
+
+    if (!isLoggedIn) {
+        return (
+            <View style={[styles.container, { backgroundColor: colors.background }]}>
+                <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
+                <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.surface }}>
+                    <View style={[styles.header, { borderBottomColor: colors.border }]}>
+                        <View>
+                            <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Saved</Text>
+                            <Text style={[styles.headerSub, { color: colors.textMuted }]}>0 items</Text>
+                        </View>
+                    </View>
+                    <View style={styles.emptyState}>
+                        <View style={[styles.emptyIconCircle, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="lock-closed-outline" size={38} color={colors.textSecondary} />
+                        </View>
+                        <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>Login Required</Text>
+                        <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+                            Sign in to view your saved items across devices.
+                        </Text>
+                        <TouchableOpacity style={styles.exploreBtn} onPress={() => navigation.navigate('Auth', { screen: 'Login' })} activeOpacity={0.85}>
+                            <LinearGradient colors={(gradients?.button || []).every(Boolean) ? gradients.button : ['#7B5EEA', '#5A3EC8']} style={styles.exploreBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                                <Ionicons name="log-in-outline" size={16} color="#fff" />
+                                <Text style={styles.exploreBtnText}>Login / Sign Up</Text>
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    </View>
+                </SafeAreaView>
+            </View>
+        );
+    }
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -473,7 +512,7 @@ const SavedScreen = ({ navigation }) => {
                 <EmptyState
                     colors={colors}
                     gradients={gradients}
-                    onExplore={() => navigation.navigate('Explore')}
+                    onStartShopping={() => navigation.navigate('Home')}
                 />
             ) : (
                 /* Single FlatList — key changes on viewMode toggle to force remount */
@@ -510,8 +549,6 @@ const SavedScreen = ({ navigation }) => {
                 />
             )}
 
-            {/* ── Toasts ── */}
-            <ToastComponent />
         </View>
     );
 };

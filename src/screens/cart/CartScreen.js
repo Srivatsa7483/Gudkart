@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -8,10 +8,12 @@ import {
 import { LinearGradient } from '../../components/SafeLinearGradient';
 import { Ionicons } from '@expo/vector-icons';
 import useTheme from '../../hooks/useTheme';
+import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 
 const CartScreen = ({ navigation }) => {
     const { colors, gradients, isDark } = useTheme();
+    const { isLoggedIn, user } = useAuth();
     const insets = useSafeAreaInsets();
     const styles = React.useMemo(() => getStyles(colors, isDark, insets), [colors, isDark, insets]);
     const scrollRef = useRef(null);
@@ -28,6 +30,12 @@ const CartScreen = ({ navigation }) => {
         updateQuantity: ctxUpdateQty,
         removeFromCart,
     } = useCart();
+
+    // 🛒 DEBUG — log every time CartScreen renders so we can see what cart state it gets
+    console.log(
+        `🛒 [CartScreen] render | uid=${user?.uid ?? 'null'} | isLoading=${isLoading} | cartItems=${cartItems.length}`,
+        cartItems.map(i => ({ id: i.id, name: i.name, qty: i.quantity }))
+    );
 
     const getKey = (item) => item.id + (item.color || '');
 
@@ -216,6 +224,36 @@ const CartScreen = ({ navigation }) => {
             </View>
         );
     };
+
+    // ─── Unauthenticated State ────────────────────────────────────────────────
+    if (!isLoggedIn) {
+        return (
+            <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+                <LinearGradient colors={isDark ? ['#1A0B2E', '#2E1A47'] : ['#E8F4FD', '#F0F9FF']} style={styles.gradient}>
+                    <View style={styles.header}>
+                        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+                            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+                        </TouchableOpacity>
+                        <Text style={styles.headerTitle}>My Cart</Text>
+                        <View style={{ width: 40 }} />
+                    </View>
+                    <View style={styles.emptyContainer}>
+                        <View style={styles.emptyIconContainer}>
+                            <Ionicons name="lock-closed-outline" size={80} color={colors.border} />
+                        </View>
+                        <Text style={styles.emptyTitle}>Login Required</Text>
+                        <Text style={styles.emptySubtitle}>Sign in to view your bag and check out</Text>
+                        <TouchableOpacity style={styles.shopNowButton}
+                            onPress={() => navigation.navigate('Auth', { screen: 'Login' })}>
+                            <LinearGradient colors={(gradients?.button || []).every(Boolean) ? gradients.button : ['#7B5EEA', '#5A3EC8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.shopNowGradient}>
+                                <Text style={styles.shopNowText}>Login / Sign Up</Text>
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    </View>
+                </LinearGradient>
+            </SafeAreaView>
+        );
+    }
 
     // ─── Loading State ────────────────────────────────────────────────────────
     if (isLoading) {
@@ -624,7 +662,7 @@ const getStyles = (colors, isDark, insets) => StyleSheet.create({
     // ── Sticky Checkout Bar ──
     checkoutBar: {
         position: 'absolute',
-        bottom: -30, // Change this from -40 to 0
+        bottom: -20, // Change this from -40 to 0
         left: 0,
         right: 0,
         backgroundColor: colors.surface,

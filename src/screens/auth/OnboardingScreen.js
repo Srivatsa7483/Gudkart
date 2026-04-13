@@ -1,4 +1,4 @@
-﻿// ─── OnboardingScreen.js ───────────────────────────────────────────────────
+// ─── OnboardingScreen.js ───────────────────────────────────────────────────
 // Gudkart — Expo Go compatible
 //
 // 3 slides — full-screen horizontal swiper using FlatList + pagingEnabled
@@ -30,6 +30,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import {
     View,
     Text,
+    Image,
     StyleSheet,
     TouchableOpacity,
     FlatList,
@@ -42,6 +43,7 @@ import { LinearGradient } from '../../components/SafeLinearGradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import useTheme from '../../hooks/useTheme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
 const SLIDE_HEIGHT = height;
@@ -176,7 +178,11 @@ const LuxuryIllustration = ({ accent }) => {
             {/* Centre logo */}
             <Animated.View style={[styles.centreCircle, { borderColor: accent + '60', transform: [{ scale }] }]}>
                 <LinearGradient colors={['#231F42', '#16132E']} style={styles.centreGradient}>
-                    <Text style={[styles.centreG, { color: accent }]}>G</Text>
+                    <Image
+                        source={require('../../assets/icons/logo.png')}
+                        style={styles.centreLogo}
+                        resizeMode="contain"
+                    />
                 </LinearGradient>
             </Animated.View>
 
@@ -454,8 +460,12 @@ const OnboardingScreen = ({ navigation }) => {
         }
     };
 
-    const handleFinish = () => {
-        // Navigate to Auth stack — Login screen
+    const handleFinish = async () => {
+        try {
+            await AsyncStorage.setItem('hasLaunched', 'true');
+        } catch (error) {
+            console.warn('Error saving launch status:', error);
+        }
         navigation?.replace('Main');
     };
 
@@ -649,12 +659,15 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     centreCircle: {
-        width: 90,
-        height: 90,
-        borderRadius: 45,
+        width: 130, // Increased from 90 to accommodate larger logo
+        height: 130, // Increased from 90
+        borderRadius: 65, // Updated to half of width/height (130/2)
         borderWidth: 2,
         overflow: 'hidden',
         position: 'absolute',
+        // If it's not centered anymore, ensure you have:
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     centreGradient: {
         width: '100%',
@@ -662,7 +675,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    centreG: { fontSize: 40, fontWeight: '900' },
+    centreLogo: {
+        width: 110, // Increased from 70
+        height: 110, // Increased from 70
+        resizeMode: 'contain', // Ensures the logo doesn't stretch weirdly
+    },
 
     // Deals illustration
     dealTagIcon: { marginBottom: 16 },

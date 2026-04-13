@@ -5,6 +5,9 @@ import { useAuth } from '../hooks/useAuth'; // provides { user } with user.uid
 
 const CartContext = createContext();
 
+// ─── User-scoped storage key so different users never share a cache ──────────
+const cartStorageKey = (uid) => uid ? `@cart_${uid}` : '@cart_guest';
+
 export const CartProvider = ({ children }) => {
     const [cartItems, setCartItems] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -16,23 +19,41 @@ export const CartProvider = ({ children }) => {
 
     // Ref to prevent saving stale data during initial load
     const hasLoaded = useRef(false);
+    // Track the previous uid so we can detect actual user switches
+    const prevUidRef = useRef(undefined);
 
-    // ─── Load cart on mount / login ─────────────────────────────────────────
+    // ─── Reset + load cart whenever the user changes (login / logout) ────────
     useEffect(() => {
+        // Skip the very first render comparison (prevUidRef is undefined)
+        if (prevUidRef.current !== undefined && prevUidRef.current === uid) return;
+        prevUidRef.current = uid;
+
+        // Reset the guard so the persist effect doesn't fire during the switch
+        hasLoaded.current = false;
+        // Clear in-memory cart immediately — prevents stale items from flashing
+        // NOTE: this does NOT call setCartItems inside the persist effect because
+        // hasLoaded is false at this point, so nothing gets written to storage.
+        setCartItems([]);
+
         if (uid) {
             loadCartFromServer();
         } else {
-            // Not logged in — load from local storage only
+            // Not logged in — load guest cart from local storage
             loadCartFromLocal();
         }
     }, [uid]);
 
     // ─── Persist to AsyncStorage whenever cartItems change (offline backup) ─
     useEffect(() => {
+        // 🛒 DEBUG — logs every time cartItems changes
+        console.log(
+            `🛒 [CartContext] cartItems changed | uid=${uid ?? 'null'} | count=${cartItems.length}`,
+            cartItems.map(i => ({ id: i.id, name: i.name, qty: i.quantity }))
+        );
         if (hasLoaded.current) {
             saveCartToLocal(cartItems);
         }
-    }, [cartItems]);
+    }, [cartItems, uid]);
 
     // ─── Server sync ────────────────────────────────────────────────────────
     const loadCartFromServer = async () => {
@@ -42,15 +63,42 @@ export const CartProvider = ({ children }) => {
             const serverItems = data?.items || data?.cartItems || [];
             // Normalise server items to the shape our screens expect
             const normalised = serverItems.map(normaliseItem);
-            setCartItems(normalised);
-            hasLoaded.current = true;
+
+            if (normalised.length > 0) {
+                // ✅ Server has items — use them as source of truth
+                console.log('🛒 [CartContext] Loaded from server — count:', normalised.length);
+                setCartItems(normalised);
+                hasLoaded.current = true;
+            } else {
+                // ⚠️ Server returned empty — check local backup
+                // (syncCartToServer may have failed silently when items were added)
+                console.log('🛒 [CartContext] Server returned empty — checking local backup for uid:', uid);
+                const key = cartStorageKey(uid);
+                const saved = await AsyncStorage.getItem(key);
+                const localItems = saved ? JSON.parse(saved) : [];
+
+                if (localItems.length > 0) {
+                    // Local has items — restore them and re-push to server
+                    console.log('🛒 [CartContext] Restoring cart from local backup — count:', localItems.length);
+                    setCartItems(localItems);
+                    // Re-sync to server so next login also gets them from server
+                    syncCartToServer(localItems);
+                } else {
+                    // Genuinely empty — both server and local agree
+                    console.log('🛒 [CartContext] Cart is genuinely empty (server + local both empty)');
+                    setCartItems([]);
+                }
+                hasLoaded.current = true;
+            }
         } catch (error) {
             console.warn('Failed to load cart from server, falling back to local:', error.message);
             await loadCartFromLocal();
+            return; // loadCartFromLocal handles hasLoaded + setIsLoading
         } finally {
             setIsLoading(false);
         }
     };
+
 
     const syncCartToServer = async (items) => {
         if (!uid) return; // can't sync without a user
@@ -81,7 +129,8 @@ export const CartProvider = ({ children }) => {
     // ─── Local storage helpers ──────────────────────────────────────────────
     const loadCartFromLocal = async () => {
         try {
-            const saved = await AsyncStorage.getItem('@cart_items');
+            const key = cartStorageKey(uid);
+            const saved = await AsyncStorage.getItem(key);
             if (saved) {
                 setCartItems(JSON.parse(saved));
             }
@@ -95,7 +144,8 @@ export const CartProvider = ({ children }) => {
 
     const saveCartToLocal = async (items) => {
         try {
-            await AsyncStorage.setItem('@cart_items', JSON.stringify(items));
+            const key = cartStorageKey(uid);
+            await AsyncStorage.setItem(key, JSON.stringify(items));
         } catch (error) {
             console.error('Error saving cart to local storage:', error);
         }
@@ -118,6 +168,8 @@ export const CartProvider = ({ children }) => {
     // ─── Cart operations ────────────────────────────────────────────────────
 
     const addToCart = useCallback((product, quantity = 1, selectedColor = null) => {
+        // 🛒 DEBUG — log when a product is added and the current uid
+        console.log(`🛒 [CartContext] addToCart called | uid=${uid ?? 'null'} | productId=${product?.id}`);
         let message = '';
         setCartItems(prev => {
             const existingIdx = prev.findIndex(
@@ -133,12 +185,19 @@ export const CartProvider = ({ children }) => {
                 };
                 message = 'Quantity updated in cart';
             } else {
+                // Use discountPrice (offer price) if available, else fall back to price
+                const originalPrice = product.price || 0;
+                const effectivePrice = product.discountPrice || product.price || 0;
+                const discountPct = originalPrice && effectivePrice < originalPrice
+                    ? Math.round(((originalPrice - effectivePrice) / originalPrice) * 100)
+                    : (product.discount || 0);
+
                 const newItem = {
                     id: product.id,
-                    name: product.name,
-                    price: product.price,
-                    originalPrice: product.originalPrice || product.price,
-                    discount: product.discount || 0,
+                    name: product.name || product.title,
+                    price: effectivePrice,
+                    originalPrice: originalPrice,
+                    discount: discountPct,
                     image: product.image || product.images?.[0],
                     color: selectedColor,
                     quantity,
@@ -155,6 +214,52 @@ export const CartProvider = ({ children }) => {
         });
 
         return { success: true, message };
+    }, [uid]);
+
+    const addMultipleToCart = useCallback((products) => {
+        console.log(`🛒 [CartContext] addMultipleToCart called | uid=${uid ?? 'null'} | count=${products.length}`);
+        
+        setCartItems(prev => {
+            let updated = [...prev];
+            
+            products.forEach(({ product, quantity = 1, selectedColor = null }) => {
+                const existingIdx = updated.findIndex(
+                    item => item.id === product.id && item.color === selectedColor
+                );
+
+                if (existingIdx > -1) {
+                    updated[existingIdx] = {
+                        ...updated[existingIdx],
+                        quantity: updated[existingIdx].quantity + quantity,
+                    };
+                } else {
+                    const originalPrice = product.price || 0;
+                    const effectivePrice = product.discountPrice || product.price || 0;
+                    const discountPct = originalPrice && effectivePrice < originalPrice
+                        ? Math.round(((originalPrice - effectivePrice) / originalPrice) * 100)
+                        : (product.discount || 0);
+
+                    const newItem = {
+                        id: product.id,
+                        name: product.name || product.title,
+                        price: effectivePrice,
+                        originalPrice: originalPrice,
+                        discount: discountPct,
+                        image: product.image || product.images?.[0],
+                        color: selectedColor,
+                        quantity,
+                        inStock: product.inStock !== false,
+                        seller: product.seller || 'Sellsathi',
+                    };
+                    updated.push(newItem);
+                }
+            });
+
+            syncCartToServer(updated);
+            return updated;
+        });
+
+        return { success: true, message: `${products.length} items added to cart` };
     }, [uid]);
 
     const removeFromCart = useCallback((itemId, color = null) => {
@@ -222,6 +327,7 @@ export const CartProvider = ({ children }) => {
         isLoading,
         isSyncing,
         addToCart,
+        addMultipleToCart,
         removeFromCart,
         updateQuantity,
         clearCart,

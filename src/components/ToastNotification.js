@@ -1,14 +1,4 @@
-﻿// ─── ToastNotification.js ──────────────────────────────────────────────────
-// Gudkart — Reusable themed toast/snackbar notification
-// Replaces plain Alert.alert() with on-brand animated toasts
-//
-// Usage:
-//   const { showToast, ToastComponent } = useToast();
-//   showToast({ type: 'success', title: 'Added!', message: 'Item added to cart' });
-//   <ToastComponent />
-// ──────────────────────────────────────────────────────────────────────────
-
-import React, { useRef, useCallback, useState } from 'react';
+import React, { useRef, useCallback, useState, createContext, useContext } from 'react';
 import {
     View,
     Text,
@@ -22,6 +12,9 @@ import { Ionicons } from '@expo/vector-icons';
 import useTheme from '../hooks/useTheme';
 
 const { width } = Dimensions.get('window');
+
+// ─── Toast Context ──────────────────────────────────────────────────────────
+const ToastContext = createContext(null);
 
 // ─── Toast config per type ─────────────────────────────────────────────────
 const TOAST_CONFIG = {
@@ -64,7 +57,7 @@ const TOAST_CONFIG = {
 };
 
 // ─── Single Toast ──────────────────────────────────────────────────────────
-const Toast = ({ toast, onDismiss, onConfirm, onCancel }) => {
+const Toast = ({ toast, onDismiss }) => {
     const { colors, isDark } = useTheme();
     const config = TOAST_CONFIG[toast.type] || TOAST_CONFIG.info;
 
@@ -86,10 +79,10 @@ const Toast = ({ toast, onDismiss, onConfirm, onCancel }) => {
             Animated.timing(translateY, { toValue: -120, duration: 250, useNativeDriver: true }),
             Animated.timing(opacity, { toValue: 0, duration: 250, useNativeDriver: true }),
         ]).start(() => onDismiss());
-    }, []);
+    }, [onDismiss]);
 
-    const handleConfirm = () => { dismiss(); onConfirm?.(); };
-    const handleCancel = () => { dismiss(); onCancel?.(); };
+    const handleConfirm = () => { dismiss(); toast.onConfirm?.(); };
+    const handleCancel = () => { dismiss(); toast.onCancel?.(); };
 
     return (
         <Animated.View
@@ -98,10 +91,7 @@ const Toast = ({ toast, onDismiss, onConfirm, onCancel }) => {
                 { transform: [{ translateY }, { scale }], opacity },
             ]}
         >
-            {/* Glow halo behind card */}
             <View style={[toastStyles.glowHalo, { backgroundColor: config.glow + '30', shadowColor: config.glow }]} />
-
-            {/* Card */}
             <View style={[
                 toastStyles.card,
                 {
@@ -110,16 +100,13 @@ const Toast = ({ toast, onDismiss, onConfirm, onCancel }) => {
                     shadowColor: config.glow,
                 }
             ]}>
-                {/* Gold top accent bar */}
                 <LinearGradient
                     colors={config.gradientColors}
                     style={toastStyles.topBar}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                 />
-
                 <View style={toastStyles.body}>
-                    {/* Icon circle */}
                     <View style={[toastStyles.iconRing, { borderColor: config.glow + '50', shadowColor: config.glow }]}>
                         <LinearGradient
                             colors={config.gradientColors}
@@ -130,8 +117,6 @@ const Toast = ({ toast, onDismiss, onConfirm, onCancel }) => {
                             <Ionicons name={config.icon} size={22} color="#1A0B2E" />
                         </LinearGradient>
                     </View>
-
-                    {/* Text */}
                     <View style={toastStyles.textBlock}>
                         <Text style={[toastStyles.title, { color: colors.textPrimary }]}>
                             {toast.title}
@@ -142,14 +127,10 @@ const Toast = ({ toast, onDismiss, onConfirm, onCancel }) => {
                             </Text>
                         ) : null}
                     </View>
-
-                    {/* Dismiss X */}
                     <TouchableOpacity onPress={dismiss} style={toastStyles.closeBtn} activeOpacity={0.7}>
                         <Ionicons name="close" size={16} color={colors.textMuted} />
                     </TouchableOpacity>
                 </View>
-
-                {/* Action buttons for confirm type */}
                 {toast.type === 'confirm' && (
                     <View style={[toastStyles.actionRow, { borderTopColor: colors.border }]}>
                         <TouchableOpacity style={toastStyles.cancelBtn} onPress={handleCancel} activeOpacity={0.8}>
@@ -176,8 +157,8 @@ const Toast = ({ toast, onDismiss, onConfirm, onCancel }) => {
     );
 };
 
-// ─── useToast hook ──────────────────────────────────────────────────────────
-export const useToast = () => {
+// ─── ToastProvider ──────────────────────────────────────────────────────────
+export const ToastProvider = ({ children }) => {
     const [toasts, setToasts] = useState([]);
 
     const showToast = useCallback(({
@@ -193,7 +174,6 @@ export const useToast = () => {
         const id = Date.now().toString();
         setToasts((prev) => [...prev, { id, type, title, message, duration, confirmLabel, cancelLabel, onConfirm, onCancel }]);
 
-        // Auto-dismiss for non-confirm toasts
         if (type !== 'confirm') {
             setTimeout(() => {
                 setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -205,24 +185,31 @@ export const useToast = () => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
     }, []);
 
-    const ToastComponent = useCallback(() => (
-        <View style={toastStyles.container} pointerEvents="box-none">
-            {toasts.map((toast) => (
-                <Toast
-                    key={toast.id}
-                    toast={toast}
-                    onDismiss={() => dismissToast(toast.id)}
-                    onConfirm={toast.onConfirm}
-                    onCancel={toast.onCancel}
-                />
-            ))}
-        </View>
-    ), [toasts, dismissToast]);
-
-    return { showToast, ToastComponent };
+    return (
+        <ToastContext.Provider value={{ showToast }}>
+            {children}
+            <View style={toastStyles.container} pointerEvents="box-none">
+                {toasts.map((toast) => (
+                    <Toast
+                        key={toast.id}
+                        toast={toast}
+                        onDismiss={() => dismissToast(toast.id)}
+                    />
+                ))}
+            </View>
+        </ToastContext.Provider>
+    );
 };
 
-// ─── Styles ────────────────────────────────────────────────────────────────
+// ─── useToast hook ──────────────────────────────────────────────────────────
+export const useToast = () => {
+    const ctx = useContext(ToastContext);
+    if (!ctx) {
+        throw new Error('useToast must be used within a ToastProvider');
+    }
+    return ctx;
+};
+
 const toastStyles = StyleSheet.create({
     container: {
         position: 'absolute',
@@ -248,7 +235,6 @@ const toastStyles = StyleSheet.create({
         shadowOffset: { width: 0, height: 0 },
         shadowOpacity: 0.6,
         shadowRadius: 20,
-        elevation: 0,
     },
     card: {
         width: '100%',
@@ -260,10 +246,7 @@ const toastStyles = StyleSheet.create({
         shadowRadius: 20,
         elevation: 16,
     },
-    topBar: {
-        height: 3,
-        width: '100%',
-    },
+    topBar: { height: 3, width: '100%' },
     body: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -272,76 +255,21 @@ const toastStyles = StyleSheet.create({
         gap: 12,
     },
     iconRing: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        borderWidth: 1.5,
-        overflow: 'hidden',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.5,
-        shadowRadius: 8,
-        elevation: 6,
-        flexShrink: 0,
+        width: 44, height: 44, borderRadius: 22, borderWidth: 1.5,
+        overflow: 'hidden', shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.5, shadowRadius: 8, elevation: 6, flexShrink: 0,
     },
-    iconGradient: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    textBlock: {
-        flex: 1,
-        gap: 3,
-    },
-    title: {
-        fontSize: 15,
-        fontWeight: '700',
-        letterSpacing: -0.2,
-    },
-    message: {
-        fontSize: 13,
-        lineHeight: 18,
-        fontWeight: '400',
-    },
-    closeBtn: {
-        width: 28,
-        height: 28,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: 14,
-        flexShrink: 0,
-    },
-    actionRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderTopWidth: 1,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        gap: 10,
-    },
-    cancelBtn: {
-        flex: 1,
-        alignItems: 'center',
-        paddingVertical: 10,
-        borderRadius: 10,
-    },
-    cancelBtnText: {
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    confirmBtnWrap: {
-        flex: 1,
-        borderRadius: 10,
-        overflow: 'hidden',
-    },
-    confirmBtn: {
-        alignItems: 'center',
-        paddingVertical: 10,
-    },
-    confirmBtnText: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#1A0B2E',
-    },
+    iconGradient: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    textBlock: { flex: 1, gap: 3 },
+    title: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+    message: { fontSize: 13, lineHeight: 18, fontWeight: '400' },
+    closeBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 14, flexShrink: 0 },
+    actionRow: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
+    cancelBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10 },
+    cancelBtnText: { fontSize: 14, fontWeight: '600' },
+    confirmBtnWrap: { flex: 1, borderRadius: 10, overflow: 'hidden' },
+    confirmBtn: { alignItems: 'center', paddingVertical: 10 },
+    confirmBtnText: { fontSize: 14, fontWeight: '700', color: '#1A0B2E' },
 });
 
-export default Toast;
+export default ToastProvider;

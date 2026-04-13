@@ -38,14 +38,17 @@ const profileService = {
      */
     updateProfile: async (uid, profileData) => {
         try {
-            const response = await apiClient.post(`/consumer/${uid}/profile`, profileData);
+            const response = await apiClient.post(`/consumer/${uid}/profile`, { profileData });
+
+            // The backend returns { success, message, profile }
+            const updatedProfile = response.data.profile || response.data;
 
             // Update persisted user in AsyncStorage
             const stored = await AsyncStorage.getItem('@auth_user');
             const currentUser = stored ? JSON.parse(stored) : {};
-            await AsyncStorage.setItem('@auth_user', JSON.stringify({ ...currentUser, ...response.data }));
+            await AsyncStorage.setItem('@auth_user', JSON.stringify({ ...currentUser, ...updatedProfile }));
 
-            return response.data;
+            return updatedProfile;
         } catch (error) {
             console.error('Error updating profile:', error);
             throw error;

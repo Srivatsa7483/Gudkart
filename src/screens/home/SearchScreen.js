@@ -15,15 +15,23 @@ import {
     ActivityIndicator,
     StatusBar,
     Animated,
+    Image,
+    Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from '../../components/SafeLinearGradient';
 import useTheme from '../../hooks/useTheme';
+import { useAuth } from '../../context/AuthContext';
+import { useCart } from '../../context/CartContext';
+import { useWishlist } from '../../context/WishlistContext';
 import productService from '../../services/api/productService';
 
 const { width } = Dimensions.get('window');
 const PAGE_SIZE = 10;
 const DEBOUNCE_MS = 400; // wait 400 ms after user stops typing before searching
+
+const formatPrice = (p) => `₹${Number(p || 0).toLocaleString('en-IN')}`;
 
 // ─── Skeleton Card ────────────────────────────────────────────────────────────
 const SkeletonCard = ({ colors }) => {
@@ -49,48 +57,85 @@ const SkeletonCard = ({ colors }) => {
 };
 
 // ─── Product Card ─────────────────────────────────────────────────────────────
-const ProductCard = React.memo(({ item, colors, onPress }) => {
+const ProductCard = React.memo(({ item, colors, gradients, onToggleWishlist, inWishlist, onAddToCart, onPress }) => {
     const discountPercent = item.discountPercent || 0;
     const displayPrice = item.discountPrice || item.price;
+    const inStock = (item.stock ?? item.inStock) > 0 || item.inStock === true;
 
     return (
         <TouchableOpacity
             style={[styles.productCard, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={onPress}
-            activeOpacity={0.7}
+            activeOpacity={0.85}
         >
-            {discountPercent > 0 && (
-                <View style={[styles.badge, { backgroundColor: '#4CAF50' }]}>
-                    <Text style={styles.badgeText}>{discountPercent}% OFF</Text>
+            {discountPercent > 0 && inStock && (
+                <View style={[styles.badge, { backgroundColor: colors.accent }]}>
+                    <Text style={[styles.badgeText, { color: '#1A0B2E' }]}>{discountPercent}% OFF</Text>
                 </View>
             )}
-            <View style={styles.wishlistButton}>
-                <Ionicons name="heart-outline" size={20} color={colors.textSecondary} />
+            
+            <TouchableOpacity 
+                style={styles.wishlistButton} 
+                onPress={() => onToggleWishlist(item)}
+                activeOpacity={0.7}
+            >
+                <Ionicons name={inWishlist ? "heart" : "heart-outline"} size={20} color={inWishlist ? "#FF4444" : colors.textSecondary} />
+            </TouchableOpacity>
+
+            <View style={[styles.productImageWrapper, { backgroundColor: colors.cardAlt }]}>
+                {item.image ? (
+                    <Image source={{ uri: item.image }} style={styles.productImage} resizeMode="cover" />
+                ) : (
+                    <Text style={styles.productEmoji}>📦</Text>
+                )}
+                {!inStock && (
+                    <View style={styles.outOfStockOverlay}>
+                        <Text style={styles.outOfStockText}>Out of Stock</Text>
+                    </View>
+                )}
             </View>
-            <View style={[styles.productImage, { backgroundColor: colors.cardAlt }]}>
-                <Text style={styles.productEmoji}>📦</Text>
-            </View>
+
             <View style={styles.productInfo}>
                 <Text style={[styles.productName, { color: colors.textPrimary }]} numberOfLines={2}>
                     {item.title || item.name}
                 </Text>
-                {item.rating != null && (
-                    <View style={styles.ratingContainer}>
-                        <Ionicons name="star" size={13} color="#FFD700" />
-                        <Text style={[styles.rating, { color: colors.textSecondary }]}>{Number(item.rating).toFixed(1)}</Text>
-                        <Text style={[styles.reviews, { color: colors.textMuted }]}>({item.reviewCount || 0})</Text>
-                    </View>
-                )}
+                
+                <View style={styles.ratingContainer}>
+                    <Ionicons name="star" size={13} color="#FFD700" />
+                    <Text style={[styles.rating, { color: colors.textSecondary }]}>
+                        {Number(item.rating || 0).toFixed(1)}
+                    </Text>
+                    <Text style={[styles.reviews, { color: colors.textMuted }]}>
+                        ({item.reviewCount || 0})
+                    </Text>
+                </View>
+
                 <View style={styles.priceContainer}>
                     <Text style={[styles.price, { color: colors.accent }]}>
-                        ₹{Number(displayPrice).toLocaleString('en-IN')}
+                        {formatPrice(displayPrice)}
                     </Text>
                     {discountPercent > 0 && (
                         <Text style={[styles.originalPrice, { color: colors.textMuted }]}>
-                            ₹{Number(item.price).toLocaleString('en-IN')}
+                            {formatPrice(item.price)}
                         </Text>
                     )}
                 </View>
+
+                <TouchableOpacity 
+                    style={styles.addToCartBtn} 
+                    onPress={() => onAddToCart(item)}
+                    activeOpacity={0.8}
+                >
+                    <LinearGradient 
+                        colors={gradients.button} 
+                        style={styles.cartGradient}
+                        start={{ x: 0, y: 0 }} 
+                        end={{ x: 1, y: 0 }}
+                    >
+                        <Ionicons name="add" size={16} color="#FFF" />
+                        <Text style={styles.cartBtnText}>Add</Text>
+                    </LinearGradient>
+                </TouchableOpacity>
             </View>
         </TouchableOpacity>
     );
@@ -98,7 +143,10 @@ const ProductCard = React.memo(({ item, colors, onPress }) => {
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 const SearchScreen = ({ navigation, route }) => {
-    const { colors, isDark } = useTheme();
+    const { colors, gradients, isDark } = useTheme();
+    const { isLoggedIn } = useAuth();
+    const { addToCart } = useCart();
+    const { toggleWishlist, isInWishlist } = useWishlist();
 
     // ── Search state ──────────────────────────────────────────────────────────
     const [searchQuery, setSearchQuery] = useState(route?.params?.query || '');
@@ -252,12 +300,33 @@ const SearchScreen = ({ navigation, route }) => {
         }
     };
 
+    const handleAddToCart = (item) => {
+        if (!isLoggedIn) {
+            navigation.navigate('Auth', { screen: 'Login' });
+            return;
+        }
+        addToCart(item, 1);
+        Alert.alert('✅ Added!', `${item.title || item.name} added to your bag`);
+    };
+
+    const handleToggleWishlist = (item) => {
+        if (!isLoggedIn) {
+            navigation.navigate('Auth', { screen: 'Login' });
+            return;
+        }
+        toggleWishlist(item);
+    };
+
     // ── Render helpers ────────────────────────────────────────────────────────
     const renderProductCard = ({ item }) => (
         <ProductCard
             item={item}
             colors={colors}
-            onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
+            gradients={gradients}
+            inWishlist={isInWishlist(item.id)}
+            onToggleWishlist={handleToggleWishlist}
+            onAddToCart={handleAddToCart}
+            onPress={() => navigation.navigate('ProductDetail', { productId: item.id, product: item })}
         />
     );
 
@@ -420,29 +489,36 @@ const SearchScreen = ({ navigation, route }) => {
 
             {/* Header */}
             <SafeAreaView edges={['top']} style={{ backgroundColor: colors.surface }}>
-                <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
-                    </TouchableOpacity>
-                    <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Ionicons name="search" size={20} color={colors.textMuted} />
-                        <TextInput
-                            style={[styles.searchInput, { color: colors.textPrimary }]}
-                            placeholder="Search products..."
-                            placeholderTextColor={colors.textMuted}
-                            value={searchQuery}
-                            onChangeText={setSearchQuery}
-                            onSubmitEditing={() => handleSearch(searchQuery)}
-                            returnKeyType="search"
-                            autoFocus
-                        />
-                        {searchQuery.length > 0 && (
-                            <TouchableOpacity onPress={clearSearch}>
-                                <Ionicons name="close-circle" size={20} color={colors.textMuted} />
-                            </TouchableOpacity>
-                        )}
+                <LinearGradient 
+                    colors={isDark ? ['#1A0B2E', '#2D144A'] : ['#6366F1', '#A855F7']} 
+                    start={{ x: 0, y: 0 }} 
+                    end={{ x: 1, y: 0 }}
+                    style={[styles.headerGradient]}
+                >
+                    <View style={[styles.header, { borderBottomWidth: 0 }]}>
+                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                            <Ionicons name="arrow-back" size={24} color="#FFF" />
+                        </TouchableOpacity>
+                        <View style={[styles.searchContainer, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)', borderColor: 'rgba(255,255,255,0.3)' }]}>
+                            <Ionicons name="search" size={20} color="rgba(255,255,255,0.8)" />
+                            <TextInput
+                                style={[styles.searchInput, { color: '#FFF' }]}
+                                placeholder="Search products..."
+                                placeholderTextColor="rgba(255,255,255,0.6)"
+                                value={searchQuery}
+                                onChangeText={setSearchQuery}
+                                onSubmitEditing={() => handleSearch(searchQuery)}
+                                returnKeyType="search"
+                                autoFocus
+                            />
+                            {searchQuery.length > 0 && (
+                                <TouchableOpacity onPress={clearSearch}>
+                                    <Ionicons name="close-circle" size={20} color="rgba(255,255,255,0.8)" />
+                                </TouchableOpacity>
+                            )}
+                        </View>
                     </View>
-                </View>
+                </LinearGradient>
             </SafeAreaView>
 
             {/* Filter & Sort Bar (shown only after first search) */}
@@ -576,8 +652,9 @@ const SearchScreen = ({ navigation, route }) => {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 50, paddingBottom: 16 },
-    backButton: { marginRight: 12 },
+    headerGradient: { paddingBottom: 16 },
+    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, gap: 12 },
+    backButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
     searchContainer: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, gap: 8, borderWidth: 1 },
     searchInput: { flex: 1, fontSize: 16 },
     filterBar: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
@@ -598,22 +675,28 @@ const styles = StyleSheet.create({
     resultsContainer: { flex: 1 },
     resultsCount: { fontSize: 13, paddingHorizontal: 16, paddingVertical: 10 },
     row: { justifyContent: 'space-between', paddingHorizontal: 16, gap: 12 },
-    gridContent: { paddingBottom: 20 },
-    productCard: { width: (width - 44) / 2, borderRadius: 16, padding: 12, marginBottom: 12, borderWidth: 1 },
+    gridContent: { paddingBottom: 100 },
+    productCard: { width: (width - 44) / 2, borderRadius: 20, padding: 8, marginBottom: 16, borderWidth: 1, overflow: 'hidden' },
     skeletonLine: { height: 12, borderRadius: 6 },
-    badge: { position: 'absolute', top: 12, left: 12, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, zIndex: 1 },
-    badgeText: { color: '#FFF', fontSize: 10, fontWeight: '700' },
-    wishlistButton: { position: 'absolute', top: 12, right: 12, zIndex: 1 },
-    productImage: { width: '100%', height: 120, justifyContent: 'center', alignItems: 'center', marginVertical: 8, borderRadius: 10 },
+    badge: { position: 'absolute', top: 8, left: 8, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, zIndex: 5 },
+    badgeText: { fontSize: 10, fontWeight: '800' },
+    wishlistButton: { position: 'absolute', top: 8, right: 8, zIndex: 5, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.85)', alignItems: 'center', justifyContent: 'center' },
+    productImageWrapper: { width: '100%', height: 140, borderRadius: 16, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' },
+    productImage: { width: '100%', height: '100%' },
     productEmoji: { fontSize: 60 },
-    productInfo: { gap: 6 },
-    productName: { fontSize: 14, fontWeight: '600', height: 36 },
+    outOfStockOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
+    outOfStockText: { color: '#FFF', fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
+    productInfo: { paddingHorizontal: 4, paddingTop: 10, gap: 4 },
+    productName: { fontSize: 14, fontWeight: '700', lineHeight: 18, height: 36 },
     ratingContainer: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    rating: { fontSize: 12, fontWeight: '500' },
+    rating: { fontSize: 12, fontWeight: '600' },
     reviews: { fontSize: 11 },
-    priceContainer: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 4 },
-    price: { fontSize: 16, fontWeight: '700' },
+    priceContainer: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 2 },
+    price: { fontSize: 16, fontWeight: '800' },
     originalPrice: { fontSize: 12, textDecorationLine: 'line-through' },
+    addToCartBtn: { marginTop: 8, borderRadius: 10, overflow: 'hidden' },
+    cartGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, gap: 4 },
+    cartBtnText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
     emptyIcon: { fontSize: 80, marginBottom: 16 },
     emptyTitle: { fontSize: 20, fontWeight: '600', marginBottom: 8 },

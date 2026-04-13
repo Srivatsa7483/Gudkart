@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView,
     TouchableOpacity, Alert, ActivityIndicator,
@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import useTheme from '../../hooks/useTheme';
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../components/ToastNotification';
 import orderService from '../../services/api/orderService';
 import addressService from '../../services/api/addressService.js';
 import paymentService from '../../services/api/paymentService'; // New service
@@ -23,7 +24,15 @@ const CheckoutScreen = ({ navigation, route }) => {
         [colors, isDark, insets]
     );
     const { clearCart } = useCart();
-    const { user } = useAuth();
+    const { user, isLoggedIn } = useAuth();
+    const { showToast } = useToast();
+
+    // ── Auth Guard ────────────────────────────────────────────────────────
+    useEffect(() => {
+        if (!isLoggedIn) {
+            navigation.navigate('Auth', { screen: 'Login' });
+        }
+    }, [isLoggedIn, navigation]);
 
     // ── Data from CartScreen or Buy Now ────────────────────────────────────
     const {
@@ -57,18 +66,18 @@ const CheckoutScreen = ({ navigation, route }) => {
     // ── Platform Fee Breakdown (percentages of cartTotal) ──────────────────
     const [showPlatformDetails, setShowPlatformDetails] = useState(false);
     const pf = {
-        digitalSecurityFee:    parseFloat((cartTotal * 1.2 / 100).toFixed(2)),
-        merchantVerification:  parseFloat((cartTotal * 1.0 / 100).toFixed(2)),
-        transitCare:           parseFloat((cartTotal * 0.8 / 100).toFixed(2)),
-        platformMaintenance:   parseFloat((cartTotal * 0.5 / 100).toFixed(2)),
-        qualityHandling:       parseFloat((cartTotal * 0.0 / 100).toFixed(2)),
+        digitalSecurityFee: parseFloat((cartTotal * 1.2 / 100).toFixed(2)),
+        merchantVerification: parseFloat((cartTotal * 1.0 / 100).toFixed(2)),
+        transitCare: parseFloat((cartTotal * 0.8 / 100).toFixed(2)),
+        platformMaintenance: parseFloat((cartTotal * 0.5 / 100).toFixed(2)),
+        qualityHandling: parseFloat((cartTotal * 0.0 / 100).toFixed(2)),
     };
-    const subPlatformFee   = parseFloat(Object.values(pf).reduce((s, v) => s + v, 0).toFixed(2));
-    const platformGST      = parseFloat((subPlatformFee * 0.18).toFixed(2));
+    const subPlatformFee = parseFloat(Object.values(pf).reduce((s, v) => s + v, 0).toFixed(2));
+    const platformGST = parseFloat((subPlatformFee * 0.18).toFixed(2));
     const totalPlatformFee = parseFloat((subPlatformFee + platformGST).toFixed(2));
-    const deliveryFee      = cartTotal > 5000 ? 0 : 49;
-    const total            = parseFloat((cartTotal + deliveryFee + totalPlatformFee).toFixed(2));
-    const originalPrice    = cartTotal + savings; // before discount
+    const deliveryFee = cartTotal > 5000 ? 0 : 49;
+    const total = parseFloat((cartTotal + deliveryFee + totalPlatformFee).toFixed(2));
+    const originalPrice = cartTotal + savings; // before discount
 
     const togglePlatformDetails = () => {
         if (Platform.OS === 'android') UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -279,6 +288,13 @@ const CheckoutScreen = ({ navigation, route }) => {
     const handleOrderSuccess = (response) => {
         clearCart();
         setIsPlacingOrder(false);
+
+        showToast({
+            type: 'success',
+            title: 'Order Placed!',
+            message: 'Your order has been confirmed successfully.',
+        });
+
         navigation.replace('OrderSuccess', {
             orderId: response?.orderId || '#ORD' + Date.now().toString().slice(-8),
             total: total.toLocaleString(),
@@ -558,11 +574,11 @@ const CheckoutScreen = ({ navigation, route }) => {
                                 <View style={[styles.pfBreakdownBox, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#F8F9FB', borderColor: colors.border }]}>
                                     <Text style={[styles.pfBreakdownHeader, { color: colors.textMuted }]}>SERVICE BREAKDOWN</Text>
                                     {[
-                                        { label: 'Digital Security Fee',  value: pf.digitalSecurityFee },
+                                        { label: 'Digital Security Fee', value: pf.digitalSecurityFee },
                                         { label: 'Merchant Verification', value: pf.merchantVerification },
-                                        { label: 'Transit Care',          value: pf.transitCare },
-                                        { label: 'Platform Maintenance',  value: pf.platformMaintenance },
-                                        { label: 'Quality & Handling',    value: pf.qualityHandling },
+                                        { label: 'Transit Care', value: pf.transitCare },
+                                        { label: 'Platform Maintenance', value: pf.platformMaintenance },
+                                        { label: 'Quality & Handling', value: pf.qualityHandling },
                                     ].map(({ label, value }) => (
                                         <View key={label} style={styles.pfRow}>
                                             <Text style={[styles.pfLabel, { color: colors.textSecondary }]}>{label}</Text>
@@ -791,7 +807,7 @@ const getStyles = (colors, isDark, insets) => StyleSheet.create({
         // Dynamic bottom padding: SafeAreaView edges=['top','bottom'] handles the top notch
         // but the bottom bar is position:absolute INSIDE the SafeAreaView, so we add
         // insets.bottom manually here to clear gesture nav / home indicator
-        paddingBottom: 15,
+        paddingBottom: 34,
         paddingHorizontal: 16,
         borderTopLeftRadius: 24, borderTopRightRadius: 24,
         borderTopWidth: 1, borderColor: colors.border,

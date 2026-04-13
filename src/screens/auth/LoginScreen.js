@@ -1,4 +1,4 @@
-﻿// ─── src/screens/auth/LoginScreen.js ───────────────────────────────────────
+// ─── src/screens/auth/LoginScreen.js ───────────────────────────────────────
 //
 // Connected to the central AuthContext.
 // After a successful login the context automatically:
@@ -44,7 +44,6 @@ import {
     OAuthProvider,
 } from 'firebase/auth';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
-import * as Google from 'expo-auth-session/providers/google';
 import * as Apple from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 
@@ -75,7 +74,11 @@ const LoginScreen = ({ navigation }) => {
 
     // ── Pull login action from the central context ──────────────────────────
     // uid, user, token are set automatically inside AuthContext.login()
-    const { login } = useAuth();
+    const { login, signInWithGoogle } = useAuth();
+
+    // ── CONFIGURATION ──
+    // Replace this with your actual Web Client ID from the Google Cloud Console
+    const WEB_CLIENT_ID = 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com';
 
     // ── Local UI state ──────────────────────────────────────────────────────
     const [authMethod, setAuthMethod] = useState('email');
@@ -88,13 +91,6 @@ const LoginScreen = ({ navigation }) => {
     const [confirmationResult, setConfirmationResult] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const recaptchaVerifierRef = useRef(null);
-
-    // Google OAuth session
-    const [, , promptGoogleAsync] = Google.useAuthRequest({
-        androidClientId: 'YOUR_ANDROID_CLIENT_ID.apps.googleusercontent.com',
-        iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
-        webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
-    });
 
     // ── Helpers ─────────────────────────────────────────────────────────────
     const validateEmail = (val) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
@@ -221,33 +217,28 @@ const LoginScreen = ({ navigation }) => {
         }
     };
 
-    // ── 4. Google ───────────────────────────────────────────────────────────
+    // ── 4. Google (Native) ──────────────────────────────────────────────────
     const handleGoogleLogin = async () => {
         setIsLoading(true);
         try {
-            console.log('🔥 [LoginScreen] [GOOGLE] Prompting Google sign-in...');
-            const response = await promptGoogleAsync();
+            console.log('🔥 [LoginScreen] [GOOGLE] Triggering native picker...');
 
-            if (response?.type !== 'success') {
-                setIsLoading(false);
-                console.log('ℹ️ [LoginScreen] [GOOGLE] Cancelled');
-                return;
-            }
+            // We call the native implementation from AuthContext
+            const result = await signInWithGoogle(WEB_CLIENT_ID);
 
-            const { id_token } = response.params;
-            const auth = getAuth();
-            const credential = GoogleAuthProvider.credential(id_token);
-            const userCredential = await signInWithCredential(auth, credential);
-
-            console.log('✅ [LoginScreen] [GOOGLE] Firebase sign-in OK');
-            const result = await handleBackendLogin(userCredential);
             setIsLoading(false);
-            if (result.success) navigateAfterLogin();
-            else Alert.alert('Error', result.error || 'Google login failed');
+            if (result.success) {
+                navigateAfterLogin();
+            } else {
+                // If the user cancelled, we might get an error message like "Sign in in progress" or "Canceled"
+                if (result.error !== 'Canceled') {
+                    Alert.alert('Google Login Failed', result.error || 'Something went wrong.');
+                }
+            }
         } catch (err) {
             setIsLoading(false);
-            console.error('❌ [LoginScreen] [GOOGLE]', err.code, err.message);
-            Alert.alert('Google Login Failed', getFriendlyError(err.code, err.message));
+            console.error('❌ [LoginScreen] [GOOGLE] Error:', err);
+            Alert.alert('Error', 'An unexpected error occurred during Google Sign-in.');
         }
     };
 

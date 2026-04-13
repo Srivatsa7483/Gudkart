@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
     View,
     Text,
@@ -16,12 +16,23 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '../../components/SafeLinearGradient';
 import useTheme from '../../hooks/useTheme';
+import { useAuth } from '../../context/AuthContext';
+import reviewService from '../../services/api/reviewService';
 
 const AddReviewScreen = ({ navigation, route }) => {
     const { colors, gradients, isDark } = useTheme();
-    const { product } = route.params; // Expects { id, name, emoji }
+    const { isLoggedIn } = useAuth();
+    const { product, orderId } = route.params || {};
+
+    // ── Auth Guard ────────────────────────────────────────────────────────
+    React.useEffect(() => {
+        if (!isLoggedIn) {
+            navigation.navigate('Auth', { screen: 'Login' });
+        }
+    }, [isLoggedIn, navigation]);
 
     const [rating, setRating] = useState(0);
+    const [title, setTitle] = useState('');
     const [comment, setComment] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -40,22 +51,44 @@ const AddReviewScreen = ({ navigation, route }) => {
         animateStar();
     };
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         if (rating === 0) {
             Alert.alert('Rating Required', 'Please select at least 1 star.');
             return;
         }
+        if (!title.trim() || !comment.trim()) {
+            Alert.alert('Incomplete', 'Please provide both a title and a review comment.');
+            return;
+        }
+
+        const productId = product?.id || product?.productId || product?._id;
+        if (!productId) {
+            Alert.alert('Error', 'Product ID missing. Cannot submit review.');
+            return;
+        }
 
         setIsSubmitting(true);
-        // Simulating API call
-        setTimeout(() => {
-            setIsSubmitting(false);
+        try {
+            await reviewService.submitReview({
+                productId,
+                orderId: orderId || null,
+                rating,
+                title: title.trim(),
+                body: comment.trim(),
+            });
+
             Alert.alert(
                 'Review Submitted',
                 'Thank you for your feedback! It helps other shoppers.',
                 [{ text: 'Great!', onPress: () => navigation.goBack() }]
             );
-        }, 1500);
+        } catch (error) {
+            console.error('[AddReviewScreen] err:', error);
+            const msg = error?.response?.data?.message || 'Failed to submit review. Please try again.';
+            Alert.alert('Submission Failed', msg);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -129,10 +162,22 @@ const AddReviewScreen = ({ navigation, route }) => {
                     {/* Comment Section */}
                     <View style={styles.commentSection}>
                         <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Your Review</Text>
+                        
+                        <View style={[styles.inputWrapper, { backgroundColor: colors.card, borderColor: colors.border, minHeight: 50, paddingVertical: 12, marginBottom: 16 }]}>
+                            <TextInput
+                                style={[styles.input, { color: colors.textPrimary }]}
+                                placeholder="Review summary (e.g., Great product!)"
+                                placeholderTextColor={colors.textMuted}
+                                value={title}
+                                onChangeText={setTitle}
+                                maxLength={60}
+                            />
+                        </View>
+
                         <View style={[styles.inputWrapper, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <TextInput
                                 style={[styles.input, { color: colors.textPrimary }]}
-                                placeholder="What did you like or dislike? How was the quality? (Optional)"
+                                placeholder="What did you like or dislike? How was the quality?"
                                 placeholderTextColor={colors.textMuted}
                                 multiline
                                 numberOfLines={6}

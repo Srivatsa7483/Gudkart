@@ -1,4 +1,4 @@
-﻿// ─── ExploreScreen.js ──────────────────────────────────────────────────────
+// ─── ExploreScreen.js ──────────────────────────────────────────────────────
 // Gudkart — Expo Go compatible
 //
 // States:
@@ -38,8 +38,10 @@ import {
 import { LinearGradient } from '../../components/SafeLinearGradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import useTheme from '../../hooks/useTheme';
 import { useCart } from '../../context/CartContext';
+import { useAuth } from '../../context/AuthContext';
+import { useWishlist } from '../../context/WishlistContext';
+import useTheme from '../../hooks/useTheme';
 import { PRODUCT_DETAIL } from '../../data/mockData';
 
 const { width, height } = Dimensions.get('window');
@@ -107,7 +109,7 @@ const StarRating = ({ rating, color }) => (
 );
 
 // ─── Product Card ──────────────────────────────────────────────────────────
-const ProductCard = ({ item, colors, gradients, onPress, onAddToCart }) => {
+const ProductCard = ({ item, colors, gradients, onPress, onAddToCart, onToggleWishlist, inWishlist }) => {
     const scale = useRef(new Animated.Value(1)).current;
     return (
         <Animated.View style={{ transform: [{ scale }], width: CARD_WIDTH }}>
@@ -121,8 +123,8 @@ const ProductCard = ({ item, colors, gradients, onPress, onAddToCart }) => {
                 <View style={[styles.productBadge, { backgroundColor: item.badgeColor + '25', borderColor: item.badgeColor + '60' }]}>
                     <Text style={[styles.productBadgeText, { color: item.badgeColor }]}>{item.badge}</Text>
                 </View>
-                <TouchableOpacity style={styles.wishBtn} activeOpacity={0.7}>
-                    <Ionicons name="heart-outline" size={15} color={colors.textMuted} />
+                <TouchableOpacity style={styles.wishBtn} activeOpacity={0.7} onPress={() => onToggleWishlist(item)}>
+                    <Ionicons name={inWishlist ? "heart" : "heart-outline"} size={15} color={inWishlist ? "#FF4444" : colors.textMuted} />
                 </TouchableOpacity>
                 <View style={[styles.productImageBox, { backgroundColor: colors.cardAlt }]}>
                     <Text style={styles.productEmoji}>{item.emoji}</Text>
@@ -214,6 +216,8 @@ const EmptyState = ({ query, colors }) => (
 const ExploreScreen = ({ navigation }) => {
     const { colors, gradients, isDark } = useTheme();
     const { addToCart } = useCart();
+    const { isLoggedIn } = useAuth();
+    const { toggleWishlist, isInWishlist } = useWishlist();
 
     const [query, setQuery] = useState('');
     const [isFocused, setIsFocused] = useState(false);
@@ -310,9 +314,15 @@ const ExploreScreen = ({ navigation }) => {
     const goToDetail = (product) => navigation.navigate('Home', { screen: 'ProductDetail', params: { product: product || PRODUCT_DETAIL } });
 
     const handleAddToCart = (item) => {
+        if (!isLoggedIn) { navigation.navigate('Auth', { screen: 'Login' }); return; }
         addToCart(item, 1);
         Alert.alert('✅ Added!', `${item.name} added to your bag`);
     };
+
+    const handleToggleWishlist = useCallback((item) => {
+        if (!isLoggedIn) { navigation.navigate('Auth', { screen: 'Login' }); return; }
+        toggleWishlist(item);
+    }, [isLoggedIn, navigation, toggleWishlist]);
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -494,6 +504,8 @@ const ExploreScreen = ({ navigation }) => {
                             gradients={gradients}
                             onPress={() => goToDetail(item)}
                             onAddToCart={handleAddToCart}
+                            onToggleWishlist={handleToggleWishlist}
+                            inWishlist={isInWishlist(item.id)}
                         />
                     )}
                     ListFooterComponent={<View style={{ height: 90 }} />}

@@ -1,4 +1,4 @@
-﻿// ─── ProductDetailScreen.js ────────────────────────────────────────────────
+// ─── ProductDetailScreen.js ────────────────────────────────────────────────
 // Fetches product from backend. Falls back to route.params.product if passed.
 // Supports: image carousel (real URLs), color selector, size selector,
 // out-of-stock handling, add to cart, wishlist, review submit.
@@ -22,12 +22,14 @@ import {
 } from 'react-native';
 import { LinearGradient } from '../../components/SafeLinearGradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import useTheme from '../../hooks/useTheme';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 import { useWishlist } from '../../context/WishlistContext';
 import productService, { normaliseProduct } from '../../services/api/productService';
+import reviewService from '../../services/api/reviewService';
 
 const { width, height } = Dimensions.get('window');
 const IMAGE_HEIGHT = height * 0.4;
@@ -176,27 +178,46 @@ const SizeSelector = ({ sizes, sizePrices, pricingType, selectedSize, onSelect, 
 );
 
 // ─── Review Card ───────────────────────────────────────────────────────────
-const ReviewCard = ({ review, colors }) => (
-    <View style={[styles.reviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={styles.reviewHeader}>
-            <View style={[styles.reviewAvatar, { backgroundColor: colors.accent + '30' }]}>
-                <Text style={[styles.reviewAvatarText, { color: colors.accent }]}>
-                    {(review.userName || review.user || 'U')[0].toUpperCase()}
-                </Text>
-            </View>
-            <View style={{ flex: 1 }}>
-                <Text style={[styles.reviewUser, { color: colors.textPrimary }]}>{review.userName || review.user}</Text>
-                <View style={styles.reviewMeta}>
-                    <StarRating rating={review.rating} size={11} color="#FFD700" />
-                    <Text style={[styles.reviewDate, { color: colors.textMuted }]}>{review.date || ''}</Text>
+const ReviewCard = ({ review, colors }) => {
+    const name = review.customerName || review.userName || review.user || 'Anonymous';
+
+    // Format the date if it's a Firestore Timestamp or string
+    let dateStr = review.date || '';
+    if (!dateStr && review.createdAt) {
+        if (typeof review.createdAt === 'string') {
+            dateStr = new Date(review.createdAt).toLocaleDateString();
+        } else if (review.createdAt._seconds) {
+            dateStr = new Date(review.createdAt._seconds * 1000).toLocaleDateString();
+        }
+    }
+
+    return (
+        <View style={[styles.reviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.reviewHeader}>
+                <View style={[styles.reviewAvatar, { backgroundColor: colors.accent + '30' }]}>
+                    <Text style={[styles.reviewAvatarText, { color: colors.accent }]}>
+                        {name[0].toUpperCase()}
+                    </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                    <Text style={[styles.reviewUser, { color: colors.textPrimary }]}>
+                        {name} {review.verified ? <Ionicons name="checkmark-circle" size={12} color="#4CAF50" /> : null}
+                    </Text>
+                    <View style={styles.reviewMeta}>
+                        <StarRating rating={review.rating} size={11} color="#FFD700" />
+                        {dateStr ? <Text style={[styles.reviewDate, { color: colors.textMuted }]}>{dateStr}</Text> : null}
+                    </View>
                 </View>
             </View>
+            {review.title ? (
+                <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 13, marginBottom: 4 }}>{review.title}</Text>
+            ) : null}
+            {review.body || review.comment ? (
+                <Text style={[styles.reviewComment, { color: colors.textSecondary }]}>{review.body || review.comment}</Text>
+            ) : null}
         </View>
-        {review.comment ? (
-            <Text style={[styles.reviewComment, { color: colors.textSecondary }]}>{review.comment}</Text>
-        ) : null}
-    </View>
-);
+    );
+};
 
 // ─── Section Title ─────────────────────────────────────────────────────────
 const SectionTitle = ({ title, colors }) => (
@@ -232,6 +253,10 @@ const ProductDetailScreen = ({ navigation, route }) => {
     const [carouselImages, setCarouselImages] = useState([]);
     const [showFullDesc, setShowFullDesc] = useState(false);
 
+    // Reviews state
+    const [reviews, setReviews] = useState([]);
+    const [reviewsLoading, setReviewsLoading] = useState(true);
+
     // ─── Derive cart state from global CartContext ─────────────────────────
     // This ensures ProductDetailScreen always reflects the real cart state,
     // even when the item was added from HomeScreen or any other screen.
@@ -246,10 +271,34 @@ const ProductDetailScreen = ({ navigation, route }) => {
     const wishScale = useRef(new Animated.Value(1)).current;
 
     // ─── Fetch product if not passed via route ─────────────────────────────
+
+    const fetchReviews = async (id, silent = false) => {
+        try {
+            if (!silent) setReviewsLoading(true);
+            const res = await reviewService.getProductReviews(id);
+            if (res.success) {
+                setReviews(res.reviews || []);
+            }
+        } catch (e) {
+            console.error('[ProductDetailScreen] fetchReviews err:', e);
+        } finally {
+            if (!silent) setReviewsLoading(false);
+        }
+    };
+
+    useFocusEffect(
+        useCallback(() => {
+            if (product && product.id) {
+                fetchReviews(product.id, true);
+            }
+        }, [product?.id])
+    );
+
     useEffect(() => {
         if (routeProduct && !productId) {
             // Already have full data from list screen
             initProduct(routeProduct);
+            fetchReviews(routeProduct.id);
             return;
         }
         const idToFetch = productId || routeProduct?.id;
@@ -264,6 +313,7 @@ const ProductDetailScreen = ({ navigation, route }) => {
                 const result = await productService.getProductById(idToFetch);
                 const p = result.product || normaliseProduct(result);
                 initProduct(p);
+                fetchReviews(idToFetch);
             } catch (err) {
                 console.error('[ProductDetailScreen] fetch error:', err.message);
                 setError('Failed to load product details.');
@@ -344,10 +394,10 @@ const ProductDetailScreen = ({ navigation, route }) => {
     // ─── Actions ──────────────────────────────────────────────────────────
     const handleWishlist = () => {
         if (!isLoggedIn) { navigation.navigate('Auth', { screen: 'Login' }); return; }
-        
+
         // Context handle
         toggleWishlist(product);
-        
+
         // Visual feedback
         Animated.sequence([
             Animated.spring(wishScale, { toValue: 1.35, useNativeDriver: true }),
@@ -609,14 +659,24 @@ const ProductDetailScreen = ({ navigation, route }) => {
                     <View style={styles.reviewsHeader}>
                         <SectionTitle title="Reviews" colors={colors} />
                         <TouchableOpacity
-                            onPress={() => navigation.navigate('AddReview', { product: { id: product.id, name: product.title || product.name } })}
+                            onPress={() => {
+                                if (!isLoggedIn) { navigation.navigate('Auth', { screen: 'Login' }); return; }
+                                navigation.navigate('AddReview', { product: { id: product.id, name: product.title || product.name } });
+                            }}
                         >
                             <Text style={[styles.seeAll, { color: colors.accent }]}>+ Write Review</Text>
                         </TouchableOpacity>
                     </View>
-                    <Text style={[styles.reviewPlaceholder, { color: colors.textMuted }]}>
-                        No reviews yet. Be the first!
-                    </Text>
+
+                    {reviewsLoading ? (
+                        <ActivityIndicator size="small" color={colors.accent} style={{ marginTop: 10, alignSelf: 'flex-start' }} />
+                    ) : reviews.length > 0 ? (
+                        reviews.map((r, i) => <ReviewCard key={r.id || i} review={r} colors={colors} />)
+                    ) : (
+                        <Text style={[styles.reviewPlaceholder, { color: colors.textMuted }]}>
+                            No reviews yet. Be the first!
+                        </Text>
+                    )}
                 </View>
             </ScrollView>
 
@@ -776,7 +836,7 @@ const styles = StyleSheet.create({
 
     // Sticky bar
     stickyBar: {
-        position: 'absolute', bottom: -30, left: 0, right: 0,
+        position: 'absolute', bottom: -20, left: 0, right: 0,
         flexDirection: 'row', alignItems: 'center',
         paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12,
         gap: 10, borderTopWidth: 1,

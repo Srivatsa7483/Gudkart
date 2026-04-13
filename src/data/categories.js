@@ -184,8 +184,8 @@ export const CATEGORIES = [
         subcategories: ['All', 'Pottery', 'Woodwork', 'Textiles', 'Jewelry Making', 'Candles'],
     },
     {
-        id: 'Baby',
-        name: 'Baby',
+        id: 'Kids & Baby',
+        name: 'Kids & Baby',
         icon: 'heart-outline',
         emoji: '👶',
         color: '#FF9FF3',

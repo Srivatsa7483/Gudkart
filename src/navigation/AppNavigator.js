@@ -13,6 +13,7 @@ import Splash from '../screens/auth/SplashScreen';
 
 import OrdersScreen from '../screens/orders/OrdersScreen';
 import OrderDetailScreen from '../screens/orders/OrderDetailScreen';
+import OrderTrackingScreen from '../screens/orders/OrderTrackingScreen';
 import NotificationsScreen from '../screens/notification/NotificationsScreen';
 import AddReviewScreen from '../screens/products/AddReviewScreen';
 import ProductDetailScreen from '../screens/products/ProductDetailScreen';
@@ -42,6 +43,7 @@ const AppNavigator = () => (
             {/* Orders */}
             <Stack.Screen name="Orders" component={OrdersScreen} />
             <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
+            <Stack.Screen name="OrderTracking" component={OrderTrackingScreen} />
 
             {/* Notifications */}
             <Stack.Screen name="Notifications" component={NotificationsScreen} />

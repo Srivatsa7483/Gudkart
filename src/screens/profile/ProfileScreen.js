@@ -3,6 +3,7 @@ import React, { useRef, useState } from 'react';
 import {
     View,
     Text,
+    Image,
     ScrollView,
     TouchableOpacity,
     StyleSheet,
@@ -21,10 +22,12 @@ import { Ionicons } from '@expo/vector-icons';
 import useTheme from '../../hooks/useTheme';
 import { useAuth } from '../../context/AuthContext';
 import { useWishlist } from '../../context/WishlistContext';
+import { useNotifications } from '../../context/NotificationContext';
 import NotificationBadge from '../../components/NotificationBadge';
 import { CONTACT_INFO } from '../../data/supportContent';
 import addressService from '../../services/api/addressService';
 import orderService from '../../services/api/orderService';
+import profileService from '../../services/api/Profileservice';
 
 const { width } = Dimensions.get('window');
 
@@ -90,8 +93,9 @@ const SectionCard = ({ title, children, colors }) => (
 // ─── Main Screen ───────────────────────────────────────────────────────────
 const ProfileScreen = ({ navigation }) => {
     const { colors, gradients, isDark, toggle } = useTheme();
-    const { isLoggedIn, user, logout } = useAuth();
+    const { isLoggedIn, user, logout, updateUser } = useAuth();
     const { wishlistItems } = useWishlist();
+    const { createMobileNotification } = useNotifications();
     const [notificationsOn, setNotificationsOn] = useState(true);
     const [orderCount, setOrderCount] = useState(0);
     const [addressSublabel, setAddressSublabel] = useState('Manage your shipping addresses');
@@ -111,20 +115,31 @@ const ProfileScreen = ({ navigation }) => {
     useFocusEffect(
         React.useCallback(() => {
             if (isLoggedIn && user?.uid) {
-                fetchProfileData();
+                fetchProfileData(user.uid);
             }
         }, [isLoggedIn, user?.uid])
     );
 
-    const fetchProfileData = async () => {
+    const fetchProfileData = async (uid) => {
         try {
+            // ── Re-fetch user profile from backend so latest edits are shown ──
+            try {
+                const profileRes = await profileService.getProfile(uid);
+                const freshProfile = profileRes?.profile || profileRes;
+                if (freshProfile && typeof freshProfile === 'object') {
+                    updateUser(freshProfile);
+                }
+            } catch (profileErr) {
+                console.warn('[ProfileScreen] Could not refresh profile from server:', profileErr.message);
+                // Non-fatal — keep showing cached user data
+            }
             // Fetch Orders — API returns { orders: [...] } or a plain array
-            const ordersData = await orderService.getUserOrders(user.uid);
+            const ordersData = await orderService.getUserOrders(uid);
             const orderList = Array.isArray(ordersData) ? ordersData : (ordersData?.orders ?? []);
             setOrderCount(orderList.length);
 
             // Fetch Addresses — API returns { addresses: [...] } or a plain array
-            const addrData = await addressService.getAddresses(user.uid);
+            const addrData = await addressService.getAddresses(uid);
             const addresses = addrData?.addresses || addrData || [];
             if (Array.isArray(addresses) && addresses.length > 0) {
                 const defaultAddr = addresses.find(a => a.isDefault);
@@ -236,21 +251,18 @@ const ProfileScreen = ({ navigation }) => {
                         <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>My Profile</Text>
                         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                             <NotificationBadge iconSize={18} iconColor={colors.textSecondary} />
-                            <TouchableOpacity
-                                style={[styles.editBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                                activeOpacity={0.8}
-                                onPress={() => navigation.navigate('EditProfile')}
-                            >
-                                <Ionicons name="pencil-outline" size={16} color={colors.textSecondary} />
-                                <Text style={[styles.editBtnText, { color: colors.textSecondary }]}>Edit</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.editBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                                activeOpacity={0.8}
-                                onPress={() => navigation.navigate('Settings')}
-                            >
-                                <Ionicons name="settings-outline" size={16} color={colors.textSecondary} />
-                            </TouchableOpacity>
+                            {isLoggedIn && (
+                                <TouchableOpacity
+                                    style={[styles.editBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                    activeOpacity={0.8}
+                                    onPress={() => navigation.navigate('EditProfile', {
+                                        photoUri: user?.photoURL ?? user?.profilePhoto ?? null,
+                                    })}
+                                >
+                                    <Ionicons name="pencil-outline" size={16} color={colors.textSecondary} />
+                                    <Text style={[styles.editBtnText, { color: colors.textSecondary }]}>Edit</Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                     </View>
 
@@ -266,20 +278,27 @@ const ProfileScreen = ({ navigation }) => {
                                     },
                                 ]}
                             />
-                            <LinearGradient
-                                colors={(gradients?.primary || []).every(Boolean) ? gradients.primary : ['#7B5EEA', '#5A3EC8']}
-                                style={styles.avatar}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                            >
-                                {isLoggedIn ? (
-                                    <Text style={styles.avatarText}>
-                                        {(user?.fullName || user?.name || 'U').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
-                                    </Text>
-                                ) : (
-                                    <Ionicons name="person" size={32} color={colors.textPrimary} />
-                                )}
-                            </LinearGradient>
+                            {user?.photoURL ? (
+                                <Image
+                                    source={{ uri: user.photoURL }}
+                                    style={styles.avatar}
+                                />
+                            ) : (
+                                <LinearGradient
+                                    colors={(gradients?.primary || []).every(Boolean) ? gradients.primary : ['#7B5EEA', '#5A3EC8']}
+                                    style={styles.avatar}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 1 }}
+                                >
+                                    {isLoggedIn ? (
+                                        <Text style={styles.avatarText}>
+                                            {(user?.fullName || user?.name || 'U').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
+                                        </Text>
+                                    ) : (
+                                        <Ionicons name="person" size={32} color={colors.textPrimary} />
+                                    )}
+                                </LinearGradient>
+                            )}
                             <View style={[styles.onlineDot, { backgroundColor: colors.success, borderColor: colors.background }]} />
                         </View>
 
@@ -295,12 +314,6 @@ const ProfileScreen = ({ navigation }) => {
                             <Text style={[styles.userEmail, { color: colors.textSecondary }]}>
                                 {isLoggedIn ? (user?.email || '') : 'Login to view, track & buy'}
                             </Text>
-                            {isLoggedIn && (
-                                <View style={[styles.tierBadge, { backgroundColor: colors.accent + '20', borderColor: colors.accent + '50' }]}>
-                                    <Ionicons name="star" size={11} color={colors.accent} />
-                                    <Text style={[styles.tierText, { color: colors.accent }]}>Gold Member</Text>
-                                </View>
-                            )}
                         </View>
                     </View>
 
@@ -329,31 +342,43 @@ const ProfileScreen = ({ navigation }) => {
                     <View style={styles.statsRow}>
                         <StatCard value={orderCount} label="Orders" icon="bag-outline" colors={colors} />
                         <StatCard value={wishlistItems.length} label="Wishlist" icon="heart-outline" colors={colors} />
-                        <StatCard value={user?.stats?.reviews ?? 0} label="Reviews" icon="star-outline" colors={colors} />
                     </View>
                 )}
 
                 {/* ── Account ─────────────────────────────────────────────────── */}
-                <SectionCard title="ACCOUNT" colors={colors}>
-                    <MenuRow
-                        icon="bag-handle-outline"
-                        iconColor="#7B5EEA"
-                        label="My Orders"
-                        sublabel="Track, return or buy again"
-                        onPress={() => handleAccountAction('My Orders')}
-                        colors={colors}
-                    />
-                    <MenuRow
-                        icon="location-outline"
-                        iconColor="#60A5FA"
-                        label="Saved Addresses"
-                        sublabel={isLoggedIn ? addressSublabel : 'Home, Work & more'}
-                        onPress={() => handleAccountAction('Saved Addresses')}
-                        colors={colors}
-                    />
-
-
-                </SectionCard>
+                {isLoggedIn ? (
+                    <SectionCard title="ACCOUNT" colors={colors}>
+                        <MenuRow
+                            icon="bag-handle-outline"
+                            iconColor="#7B5EEA"
+                            label="My Orders"
+                            sublabel="Track, return or buy again"
+                            onPress={() => handleAccountAction('My Orders')}
+                            colors={colors}
+                        />
+                        <MenuRow
+                            icon="location-outline"
+                            iconColor="#60A5FA"
+                            label="Saved Addresses"
+                            sublabel={isLoggedIn ? addressSublabel : 'Home, Work & more'}
+                            onPress={() => handleAccountAction('Saved Addresses')}
+                            colors={colors}
+                            isLast
+                        />
+                    </SectionCard>
+                ) : (
+                    <SectionCard colors={colors}>
+                        <MenuRow
+                            icon="log-in-outline"
+                            iconColor="#7B5EEA"
+                            label="Sign in to Gudkart"
+                            sublabel="View orders, saved addresses & more"
+                            onPress={() => navigation.navigate('Auth', { screen: 'Login' })}
+                            colors={colors}
+                            isLast
+                        />
+                    </SectionCard>
+                )}
 
                 {/* ── Preferences ─────────────────────────────────────────────── */}
                 <SectionCard title="PREFERENCES" colors={colors}>
@@ -392,7 +417,48 @@ const ProfileScreen = ({ navigation }) => {
 
                 </SectionCard>
 
-                {/* ── Support ─────────────────────────────────────────────────── */}
+                {/* ── Notification Demos ── */}
+                <SectionCard title="NOTIFICATION DEMOS" colors={colors}>
+                    <MenuRow
+                        icon="cube-outline"
+                        iconColor="#10B981"
+                        label="Test: Order Delivered"
+                        sublabel="Simulate a delivery mobile alert"
+                        onPress={() => createMobileNotification(
+                            'Order Delivered 📦',
+                            'Great news! Your order #12345 has been delivered successfully. Enjoy your purchase!',
+                            { orderId: '12345', status: 'delivered' }
+                        )}
+                        colors={colors}
+                    />
+                    <MenuRow
+                        icon="close-circle-outline"
+                        iconColor="#FF4757"
+                        label="Test: Order Cancelled"
+                        sublabel="Simulate a cancellation mobile alert"
+                        onPress={() => createMobileNotification(
+                            'Order Cancelled ❌',
+                            'Your order #54321 has been cancelled as requested. Refund initiated.',
+                            { orderId: '54321', status: 'cancelled' }
+                        )}
+                        colors={colors}
+                    />
+                    <MenuRow
+                        icon="star-outline"
+                        iconColor="#FFD700"
+                        label="Test: New Products"
+                        sublabel="Simulate a new arrival notification"
+                        onPress={() => createMobileNotification(
+                            'New Arrival alert! ✨',
+                            'Check out the latest Summer Collection. Trending items are back in stock!',
+                            { type: 'announcement', category: 'Fashion' }
+                        )}
+                        colors={colors}
+                        isLast
+                    />
+                </SectionCard>
+
+                {/* ── Support ── */}
                 <SectionCard title="SUPPORT" colors={colors}>
                     <MenuRow
                         icon="help-circle-outline"
@@ -493,7 +559,7 @@ const ProfileScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
     container: { flex: 1 },
 
-    heroGradient: { paddingHorizontal: 20, paddingBottom: 24 },
+    heroGradient: { paddingHorizontal: 20, paddingBottom: 0 },
     heroCircle1: { position: 'absolute', width: 220, height: 220, borderRadius: 110, borderWidth: 1, top: -60, right: -60 },
     heroCircle2: { position: 'absolute', width: 140, height: 140, borderRadius: 70, borderWidth: 1, bottom: -30, left: -20 },
     heroTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, marginBottom: 20 },
@@ -511,8 +577,6 @@ const styles = StyleSheet.create({
     heroInfo: { flex: 1, gap: 4 },
     userName: { fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
     userEmail: { fontSize: 13, fontWeight: '400' },
-    tierBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, marginTop: 2 },
-    tierText: { fontSize: 11, fontWeight: '700' },
     memberSince: { fontSize: 11, fontWeight: '400', marginTop: 2 },
 
     scrollContent: { paddingTop: 4 },

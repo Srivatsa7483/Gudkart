@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -18,6 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import useTheme from '../../hooks/useTheme';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
+import { useWishlist } from '../../context/WishlistContext';
 import productService from '../../services/api/productService';
 
 const { width } = Dimensions.get('window');
@@ -67,7 +68,7 @@ const SkeletonCard = ({ colors }) => {
 };
 
 // ─── Product Card ──────────────────────────────────────────────────────────
-const ProductCard = React.memo(({ item, colors, gradients, cartCount, onPress, onAddToCart, onUpdateQty, onRemoveFromCart }) => {
+const ProductCard = React.memo(({ item, colors, gradients, cartCount, inWishlist, onPress, onAddToCart, onUpdateQty, onRemoveFromCart, onToggleWishlist }) => {
     const discountPercent = item.discountPrice
         ? Math.round(((item.price - item.discountPrice) / item.price) * 100)
         : 0;
@@ -110,8 +111,8 @@ const ProductCard = React.memo(({ item, colors, gradients, cartCount, onPress, o
                         <Text style={{ fontSize: 40 }}>📦</Text>
                     </View>
                 )}
-                <TouchableOpacity style={styles.wishlistBtn}>
-                    <Ionicons name="heart-outline" size={18} color={colors.textSecondary} />
+                <TouchableOpacity style={styles.wishlistBtn} onPress={() => onToggleWishlist(item)}>
+                    <Ionicons name={inWishlist ? "heart" : "heart-outline"} size={18} color={inWishlist ? "#FF4444" : colors.textSecondary} />
                 </TouchableOpacity>
             </View>
 
@@ -217,6 +218,7 @@ const ProductListScreen = ({ navigation, route }) => {
     const { colors, gradients } = useTheme();
     const { isLoggedIn } = useAuth();
     const { cartItems, addToCart, updateQuantity, removeFromCart } = useCart();
+    const { toggleWishlist, isInWishlist } = useWishlist();
     const insets = useSafeAreaInsets();
     const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -319,6 +321,11 @@ const ProductListScreen = ({ navigation, route }) => {
         removeFromCart(item.id, item.color || null);
     }, [isLoggedIn, removeFromCart]);
 
+    const handleToggleWishlist = useCallback((item) => {
+        if (!isLoggedIn) { navigation.navigate('Auth', { screen: 'Login' }); return; }
+        toggleWishlist(item);
+    }, [isLoggedIn, navigation, toggleWishlist]);
+
     // ─── Header animation ─────────────────────────────────────────────────
     const headerOpacity = scrollY.interpolate({ inputRange: [0, 60], outputRange: [0, 1], extrapolate: 'clamp' });
     const headerTranslate = scrollY.interpolate({ inputRange: [0, 60], outputRange: [10, 0], extrapolate: 'clamp' });
@@ -330,12 +337,14 @@ const ProductListScreen = ({ navigation, route }) => {
             colors={colors}
             gradients={gradients}
             cartCount={cartCountMap[item.id] || 0}
+            inWishlist={isInWishlist(item.id)}
             onPress={() => navigation.navigate('ProductDetail', { productId: item.id, product: item })}
             onAddToCart={handleAddToCart}
             onUpdateQty={handleUpdateQty}
             onRemoveFromCart={handleRemoveFromCart}
+            onToggleWishlist={handleToggleWishlist}
         />
-    ), [colors, gradients, navigation, cartCountMap, handleAddToCart, handleUpdateQty, handleRemoveFromCart]);
+    ), [colors, gradients, navigation, cartCountMap, isInWishlist, handleAddToCart, handleUpdateQty, handleRemoveFromCart, handleToggleWishlist]);
 
     const renderSkeleton = () => (
         <View style={[styles.listContent, { paddingBottom: insets.bottom + 20 }]}>

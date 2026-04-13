@@ -11,7 +11,6 @@ import useTheme from '../hooks/useTheme';
 import { useCart } from '../context/CartContext';
 
 import HomeStack from './HomeStack';
-import ExploreScreen from '../screens/explore/ExploreScreen';
 import CartScreen from '../screens/cart/CartScreen';
 import SavedScreen from '../screens/wishlist/SavedScreen';
 import ProfileStack from './ProfileStack';
@@ -20,7 +19,6 @@ const Tab = createBottomTabNavigator();
 
 const TAB_CONFIG = [
     { name: 'Home', icon: 'home', iconOutline: 'home-outline' },
-    { name: 'Explore', icon: 'search', iconOutline: 'search-outline' },
     { name: 'Cart', icon: 'bag', iconOutline: 'bag-outline' },
     { name: 'Saved', icon: 'heart', iconOutline: 'heart-outline' },
     { name: 'Profile', icon: 'person', iconOutline: 'person-outline' },
@@ -96,7 +94,6 @@ const BottomTabNavigator = () => (
         screenOptions={{ headerShown: false }}
     >
         <Tab.Screen name="Home" component={HomeStack} />
-        <Tab.Screen name="Explore" component={ExploreScreen} />
         <Tab.Screen name="Cart" component={CartScreen} />
         <Tab.Screen name="Saved" component={SavedScreen} />
         <Tab.Screen name="Profile" component={ProfileStack} />

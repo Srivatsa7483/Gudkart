@@ -73,6 +73,14 @@ export const WishlistProvider = ({ children }) => {
         });
     }, []);
 
+    const removeMultipleFromWishlist = useCallback((productIds) => {
+        setWishlistItems(prev => {
+            const updated = prev.filter(item => !productIds.includes(item.id));
+            saveWishlistToLocal(updated);
+            return updated;
+        });
+    }, []);
+
     const isInWishlist = (productId) => {
         return wishlistItems.some(item => item.id === productId);
     };
@@ -82,6 +90,7 @@ export const WishlistProvider = ({ children }) => {
         isLoading,
         toggleWishlist,
         removeFromWishlist,
+        removeMultipleFromWishlist,
         isInWishlist,
     };
 

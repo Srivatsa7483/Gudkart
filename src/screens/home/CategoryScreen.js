@@ -17,6 +17,7 @@ import useTheme from '../../hooks/useTheme';
 import productService from '../../services/api/productService';
 import { getCategoryById } from '../../data/categories';
 import { useWishlist } from '../../context/WishlistContext';
+import { useAuth } from '../../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 44) / 2;
@@ -168,8 +169,14 @@ const ProductCard = React.memo(({ item, colors, onPress, displayMode, index, onT
 const CategoryScreen = ({ navigation, route }) => {
     const { category, sortBy: initialSortBy, backendSortBy, backendOrder, label: routeLabel, displayMode } = route.params;
     const { colors, isDark } = useTheme();
+    const { isLoggedIn } = useAuth();
     const insets = useSafeAreaInsets();
     const { toggleWishlist, isInWishlist } = useWishlist();
+
+    const handleToggleWishlist = useCallback((item) => {
+        if (!isLoggedIn) { navigation.navigate('Auth', { screen: 'Login' }); return; }
+        toggleWishlist(item);
+    }, [isLoggedIn, navigation, toggleWishlist]);
 
     // Get meta from centralized data; fall back to DEFAULT_META
     const isAllCategory = !category || category === 'All';
@@ -324,7 +331,7 @@ const CategoryScreen = ({ navigation, route }) => {
             index={index}
             colors={colors}
             displayMode={displayMode}
-            onToggleWishlist={toggleWishlist}
+            onToggleWishlist={handleToggleWishlist}
             inWishlist={isInWishlist(item.id)}
             onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
         />

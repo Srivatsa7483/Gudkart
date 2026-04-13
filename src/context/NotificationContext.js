@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DeviceNotificationService from '../services/DeviceNotificationService';
 
 const NotificationContext = createContext();
 
@@ -131,6 +132,13 @@ export const NotificationProvider = ({ children }) => {
 
         const config = notificationConfig[status];
         if (config) {
+            // Trigger native mobile notification
+            DeviceNotificationService.showAlert({
+                title: config.title,
+                body: config.message,
+                data: { orderId: order.id, type: 'order_status' }
+            });
+
             return addNotification({
                 type: 'order',
                 ...config,
@@ -184,13 +192,32 @@ export const NotificationProvider = ({ children }) => {
 
     // Create welcome notification
     const createWelcomeNotification = (userName) => {
+        // Trigger native mobile notification
+        DeviceNotificationService.showAlert({
+            title: `Welcome to Gudkart, ${userName}! 🎉`,
+            body: 'Start shopping and enjoy exclusive deals!',
+        });
+
         return addNotification({
             type: 'account',
             icon: 'person',
             iconColor: '#FFD700',
-            title: `Welcome to Sellsathi, ${userName}! 🎉`,
+            title: `Welcome to Gudkart, ${userName}! 🎉`,
             message: 'Start shopping and enjoy exclusive deals!',
-            action: 'Explore',
+            action: 'Start Shopping',
+        });
+    };
+
+    // Create custom mobile notification (for demo/specific triggers)
+    const createMobileNotification = (title, message, data = {}) => {
+        DeviceNotificationService.showAlert({ title, body: message, data });
+        return addNotification({
+            type: 'announcement',
+            icon: 'megaphone',
+            iconColor: '#FF4757',
+            title,
+            message,
+            ...data
         });
     };
 
@@ -209,6 +236,7 @@ export const NotificationProvider = ({ children }) => {
         createOfferNotification,
         createPriceDropNotification,
         createWelcomeNotification,
+        createMobileNotification,
     };
 
     return (

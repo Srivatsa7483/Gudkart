@@ -1,4 +1,4 @@
-﻿// ─── Gudkart Splash Screen ───────────────────────────────────────────────────
+// ─── Gudkart Splash Screen ───────────────────────────────────────────────────
 //
 // Animated sequence:
 //  0ms  → Background gradient fades in
@@ -12,9 +12,11 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     View,
     Text,
+    Image,
     Animated,
     StyleSheet,
     Dimensions,
@@ -292,8 +294,20 @@ const SplashScreen = ({ navigation }) => {
             })
         ).start();
 
-        sequence.start(() => {
-            navigation?.replace('Auth');
+        sequence.start(async () => {
+            try {
+                const hasLaunched = await AsyncStorage.getItem('hasLaunched');
+                if (hasLaunched === null) {
+                    // First launch — show onboarding
+                    navigation?.replace('Auth');
+                } else {
+                    // Returning user — skip onboarding, go straight to app
+                    navigation?.replace('Main');
+                }
+            } catch (_) {
+                // Fallback: always go to Auth on error
+                navigation?.replace('Auth');
+            }
         });
     }, []);
 
@@ -365,9 +379,13 @@ const SplashScreen = ({ navigation }) => {
                             colors={['#2E1A47', '#1A0B2E']}
                             style={styles.logoGradient}
                         >
-                            {/* "G" lettermark in centered circle */}
+                            {/* Logo image in centered circle */}
                             <View style={styles.innerLogoCircle}>
-                                <Text style={styles.lettermark}>G</Text>
+                                <Image
+                                    source={require('../../assets/icons/logo.png')}
+                                    style={styles.logoImage}
+                                    resizeMode="contain"
+                                />
                             </View>
 
                             {/* Shopping items burst out from center */}
@@ -446,7 +464,7 @@ const SplashScreen = ({ navigation }) => {
 };
 
 // ── Styles ─────────────────────────────────────────────────────────────────
-const LOGO_SIZE = 140;
+const LOGO_SIZE = 180;
 
 const styles = StyleSheet.create({
     container: {
@@ -518,7 +536,7 @@ const styles = StyleSheet.create({
     },
 
     lettermark: {
-        fontSize: 54,
+        fontSize: 68,
         fontWeight: '900',
         color: '#FFD700',
         letterSpacing: -1,
@@ -527,10 +545,15 @@ const styles = StyleSheet.create({
         textShadowRadius: 15,
     },
 
+    logoImage: {
+        width: LOGO_SIZE * 0.9,
+        height: LOGO_SIZE * 0.9,
+    },
+
     innerLogoCircle: {
-        width: LOGO_SIZE * 0.75,
-        height: LOGO_SIZE * 0.75,
-        borderRadius: (LOGO_SIZE * 0.75) / 2,
+        width: LOGO_SIZE * 0.95,
+        height: LOGO_SIZE * 0.95,
+        borderRadius: (LOGO_SIZE * 0.95) / 2,
         borderWidth: 2,
         borderColor: '#FFD70040',
         backgroundColor: 'rgba(255, 215, 0, 0.05)',
@@ -581,14 +604,14 @@ const styles = StyleSheet.create({
     },
 
     wordmarkGud: {
-        fontSize: 48,
+        fontSize: 56,
         fontWeight: '900',
         color: '#FFFFFF',
         letterSpacing: -1,
     },
 
     wordmarkKart: {
-        fontSize: 48,
+        fontSize: 56,
         fontWeight: '900',
         color: '#FFD700',
         letterSpacing: -1,

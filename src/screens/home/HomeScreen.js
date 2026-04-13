@@ -41,7 +41,7 @@ const FLASH_DEALS = [
         image: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&q=80&w=1000',
         badge: 'Limited Time', title: 'Tech Bonanza',
         subtitle: 'Best deals on electronics & gadgets',
-        cta: 'Explore', secondaryCta: 'View All', categoryId: 'Electronics',
+        cta: 'Shop Now', secondaryCta: 'View All', categoryId: 'Electronics',
     },
     {
         id: 'deal3',
@@ -76,7 +76,7 @@ const SkeletonHCard = ({ colors }) => {
 };
 
 // ─── Flash Deal Card ───────────────────────────────────────────────────────────
-const FlashDealCard = ({ item, navigation }) => (
+const FlashDealCard = React.memo(({ item, navigation }) => (
     <TouchableOpacity activeOpacity={0.95}>
         <ImageBackground source={{ uri: item.image }} style={styles.dealCard} imageStyle={{ borderRadius: 24 }}>
             <View style={styles.dealOverlay}>
@@ -106,7 +106,7 @@ const FlashDealCard = ({ item, navigation }) => (
             </View>
         </ImageBackground>
     </TouchableOpacity>
-);
+));
 
 // ─── Horizontal Product Card ───────────────────────────────────────────────────
 const HProductCard = ({ item, colors, cartCount, onPress, onAddToCart, onUpdateQty, onRemoveFromCart, onToggleWishlist, inWishlist }) => {
@@ -416,7 +416,8 @@ const HomeScreen = ({ navigation }) => {
 
     const [refreshing, setRefreshing] = useState(false);
     const [showPickerModal, setShowPickerModal] = useState(false);
-    const [dealIndex, setDealIndex] = useState(0);
+    // Native-thread animated scroll position for deal banner dots
+    const dealScrollX = useRef(new Animated.Value(0)).current;
 
     const scrollY = useRef(new Animated.Value(0)).current;
     const [headerHeight, setHeaderHeight] = useState(0);
@@ -506,6 +507,11 @@ const HomeScreen = ({ navigation }) => {
         removeFromCart(item.id, item.color || null);
     }, [isLoggedIn, removeFromCart]);
 
+    const handleToggleWishlist = useCallback((item) => {
+        if (!isLoggedIn) { navigation.navigate('Auth', { screen: 'Login' }); return; }
+        toggleWishlist(item);
+    }, [isLoggedIn, navigation, toggleWishlist]);
+
     const headerBg = scrollY.interpolate({
         inputRange: [0, 60],
         outputRange: ['transparent', colors.surface || colors.card],
@@ -581,10 +587,10 @@ const HomeScreen = ({ navigation }) => {
                                     style={[styles.quickFilterChip, { borderColor: color + '70', backgroundColor: color + '12' }]}
                                     onPress={() => {
                                         const displayMode = label === "Today's Deals" ? 'deals' : label === 'New Arrivals' ? 'new' : 'trending';
-                                        navigation.navigate('CategoryScreen', { 
-                                            category: 'All', 
-                                            backendSortBy, 
-                                            backendOrder, 
+                                        navigation.navigate('CategoryScreen', {
+                                            category: 'All',
+                                            backendSortBy,
+                                            backendOrder,
                                             label: `${emoji} ${label}`,
                                             displayMode
                                         });
@@ -633,30 +639,63 @@ const HomeScreen = ({ navigation }) => {
                         onRefresh={() => fetchAllSections(true)}
                         tintColor={colors.accent}
                         colors={[colors.accent]}
+                        progressViewOffset={headerHeight}
                     />
                 }
             >
                 {/* ── Flash Deals Banner ────────────────────────────────────── */}
-                <ScrollView
+                <Animated.ScrollView
                     horizontal
-                    pagingEnabled
+                    pagingEnabled={false}
                     showsHorizontalScrollIndicator={false}
                     snapToInterval={DEAL_WIDTH + 12}
+                    snapToAlignment="start"
                     decelerationRate="fast"
+                    disableIntervalMomentum={true}
+                    scrollEventThrottle={16}
+                    onScroll={Animated.event(
+                        [{ nativeEvent: { contentOffset: { x: dealScrollX } } }],
+                        { useNativeDriver: true }
+                    )}
                     contentContainerStyle={styles.dealsContainer}
                 >
                     {FLASH_DEALS.map(item => (
                         <FlashDealCard key={item.id} item={item} navigation={navigation} />
                     ))}
-                </ScrollView>
-                {/* Pagination dots */}
+                </Animated.ScrollView>
+
+                {/* Pagination dots — 100% native thread.
+                    `width` is NOT supported by useNativeDriver, so we use:
+                    - scaleX on a fixed 16-wide pill  →  shrinks inactive dots to 6/16 = 0.375
+                    - opacity                          →  fades inactive dots
+                    Both are native-thread safe and silky smooth. */}
                 <View style={styles.paginationDots}>
-                    {FLASH_DEALS.map((_, i) => (
-                        <View key={i} style={[styles.dot, {
-                            backgroundColor: i === dealIndex ? colors.accent : colors.border,
-                            width: i === dealIndex ? 16 : 6,
-                        }]} />
-                    ))}
+                    {FLASH_DEALS.map((_, i) => {
+                        const STEP = DEAL_WIDTH + 12;
+                        const scaleX = dealScrollX.interpolate({
+                            inputRange: [(i - 1) * STEP, i * STEP, (i + 1) * STEP],
+                            outputRange: [0.375, 1, 0.375], // 6px / 16px = 0.375
+                            extrapolate: 'clamp',
+                        });
+                        const opacity = dealScrollX.interpolate({
+                            inputRange: [(i - 1) * STEP, i * STEP, (i + 1) * STEP],
+                            outputRange: [0.35, 1, 0.35],
+                            extrapolate: 'clamp',
+                        });
+                        return (
+                            <Animated.View
+                                key={i}
+                                style={[
+                                    styles.dot,
+                                    {
+                                        backgroundColor: colors.accent,
+                                        opacity,
+                                        transform: [{ scaleX }],
+                                    },
+                                ]}
+                            />
+                        );
+                    })}
                 </View>
 
                 {/* ── Category Sections (dynamic) ───────────────────────────── */}
@@ -673,7 +712,7 @@ const HomeScreen = ({ navigation }) => {
                         onUpdateQty={handleUpdateQty}
                         onRemoveFromCart={handleRemoveFromCart}
                         onViewAll={() => navigation.navigate('CategoryScreen', { category: section.navCategory })}
-                        onToggleWishlist={toggleWishlist}
+                        onToggleWishlist={handleToggleWishlist}
                         isInWishlist={isInWishlist}
                     />
                 ))}
@@ -691,7 +730,7 @@ const HomeScreen = ({ navigation }) => {
                     onAddToCart={handleAddToCart}
                     onUpdateQty={handleUpdateQty}
                     onRemoveFromCart={handleRemoveFromCart}
-                    onToggleWishlist={toggleWishlist}
+                    onToggleWishlist={handleToggleWishlist}
                     isInWishlist={isInWishlist}
                 />
 
@@ -749,7 +788,7 @@ const styles = StyleSheet.create({
     dealSecondaryBtn: { borderWidth: 1.5, borderColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
     dealSecondaryBtnText: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
     paginationDots: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, marginBottom: 8 },
-    dot: { height: 6, borderRadius: 3 },
+    dot: { width: 16, height: 6, borderRadius: 3 },
 
     // Section
     sectionBlock: { marginBottom: 4, paddingTop: 20 },

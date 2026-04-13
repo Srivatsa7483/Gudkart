@@ -32,6 +32,7 @@ import React, {
   useCallback,
   useMemo,
 } from 'react';
+import { useToast } from '../components/ToastNotification';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDispatch } from 'react-redux';
 
@@ -44,6 +45,9 @@ import {
 // Backend auth service
 import authService from '../services/api/authService';
 
+// Firebase Auth primitives
+import { getAuth } from 'firebase/auth';
+
 // ─── Storage keys ──────────────────────────────────────────────────────────
 const STORAGE_KEY_TOKEN = '@auth_token';
 const STORAGE_KEY_USER = '@auth_user';
@@ -54,6 +58,7 @@ const AuthContext = createContext(null);
 // ─── Provider ──────────────────────────────────────────────────────────────
 export const AuthProvider = ({ children }) => {
   const dispatch = useDispatch();
+  const { showToast } = useToast();
 
   const [uid, setUid] = useState(null);
   const [user, setUser] = useState(null);
@@ -147,6 +152,12 @@ export const AuthProvider = ({ children }) => {
       // backend doesn't return its own JWT.
       await applyAuthResponse(data, payload.idToken);
 
+      showToast({
+        type: 'success',
+        title: 'Login Successful',
+        message: `Welcome back, ${data.user?.fullName || data.user?.email || 'User'}!`
+      });
+
       const resolvedUid = data.uid ?? data.user?.uid ?? data.user?._id ?? data.user?.id ?? null;
       return { success: true, uid: resolvedUid };
     } catch (err) {
@@ -173,6 +184,12 @@ export const AuthProvider = ({ children }) => {
       const data = await authService.register(payload);
 
       await applyAuthResponse(data, payload.idToken);
+
+      showToast({
+        type: 'success',
+        title: 'Account Created',
+        message: 'Welcome to Gudkart! Start shopping now.'
+      });
 
       const resolvedUid = data.uid ?? data.user?.uid ?? data.user?._id ?? data.user?.id ?? null;
       return { success: true, uid: resolvedUid };
@@ -206,8 +223,16 @@ export const AuthProvider = ({ children }) => {
     dispatch(clearCredentials());
     await wipeSession();
 
+    showToast({
+      type: 'info',
+      title: 'Logged Out',
+      message: 'You have been successfully logged out.'
+    });
+
     console.log('👋 [AuthContext] Logged out');
   }, [dispatch]);
+
+
 
   // ── updateUser ──────────────────────────────────────────────────────────
   /**

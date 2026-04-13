@@ -1,7 +1,8 @@
-﻿import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
     View,
     Text,
+    Image,
     StyleSheet,
     ScrollView,
     TouchableOpacity,
@@ -10,32 +11,158 @@ import {
     Alert,
     KeyboardAvoidingView,
     Platform,
+    Modal,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from '../../components/SafeLinearGradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import useTheme from '../../hooks/useTheme';
 import { useAuth } from '../../context/AuthContext';
 import profileService from '../../services/api/Profileservice';
 
-const EditProfileScreen = ({ navigation }) => {
+const EditProfileScreen = ({ navigation, route }) => {
     const { colors, gradients, isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const { uid, user, updateUser } = useAuth();
 
+    // ── Local form state ─────────────────────────────────────────────────────
+    const [photoUri, setPhotoUri] = useState(
+        route?.params?.photoUri ?? user?.photoURL ?? user?.profilePhoto ?? null
+    );
     const [name, setName] = useState(user?.fullName || user?.name || '');
     const [email, setEmail] = useState(user?.email || '');
-    const [phone, setPhone] = useState(user?.phone || '');
+    const [phone, setPhone] = useState(user?.phone || user?.phoneNumber || '');
     const [bio, setBio] = useState(user?.bio || '');
+    const [gender, setGender] = useState(user?.gender || '');
+    const [dob, setDob] = useState(user?.dateOfBirth || '');
     const [focusedField, setFocusedField] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [photoPickerVisible, setPhotoPickerVisible] = useState(false);
 
-    const initials = name
+    // Tracks when we're in the camera/gallery OS flow — prevents focus-effect
+    // from resetting the newly-selected photo when the screen regains focus.
+    const cameraActiveRef = useRef(false);
+
+    // ── Auto-fill on every focus (picks up latest user from context) ─────────
+    useFocusEffect(
+        React.useCallback(() => {
+            // Skip reset if we are returning from camera/gallery
+            if (cameraActiveRef.current) {
+                cameraActiveRef.current = false;
+                return;
+            }
+            if (!user) return;
+
+            setName(user.fullName || user.name || '');
+            setEmail(user.email || '');
+            setPhone(user.phone || user.phoneNumber || '');
+            setBio(user.bio || '');
+            setGender(user.gender || '');
+            setDob(user.dateOfBirth || '');
+            // Prefer a freshly-taken photo (stored in route.params) over the
+            // possibly-stale user.photoURL saved in context.
+            const paramPhoto = route?.params?.photoUri;
+            setPhotoUri(paramPhoto ?? user.photoURL ?? user.profilePhoto ?? null);
+        }, [user])
+    );
+
+    const initials = (name || '')
         .split(' ')
+        .filter(Boolean)
         .map(w => w[0])
         .join('')
         .toUpperCase()
         .slice(0, 2) || 'U';
+
+    // ── Photo Picker Helpers ─────────────────────────────────────────────────
+
+    const requestCameraPermission = async () => {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission Required', 'Camera access is needed to take a photo.');
+            return false;
+        }
+        return true;
+    };
+
+    const requestGalleryPermission = async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission Required', 'Gallery access is needed to pick a photo.');
+            return false;
+        }
+        return true;
+    };
+
+    // Persist the current photoUri into route params before launching the camera.
+    // On Android, ImagePicker.launchCameraAsync briefly backgrounds the app which
+    // can remount this screen — storing the value in params lets useState re-init
+    // from route?.params?.photoUri and prevents the photo from being lost.
+    const persistPhotoToParams = (uri) => {
+        navigation.setParams({ photoUri: uri ?? null });
+    };
+
+    const openCamera = async () => {
+        setPhotoPickerVisible(false);
+        const granted = await requestCameraPermission();
+        if (!granted) return;
+
+        // Flag that we are entering camera OS flow — prevents useFocusEffect
+        // from resetting form state when we return.
+        cameraActiveRef.current = true;
+        // Checkpoint current draft photo in route.params so it survives any
+        // Android activity recreation while the camera is open.
+        persistPhotoToParams(photoUri);
+
+        const result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+        });
+
+        if (!result.canceled && result.assets?.length > 0) {
+            const newUri = result.assets[0].uri;
+            setPhotoUri(newUri);
+            persistPhotoToParams(newUri);
+        } else {
+            // Camera cancelled — clear the camera flag so focus effect runs next time
+            cameraActiveRef.current = false;
+        }
+    };
+
+    const openGallery = async () => {
+        setPhotoPickerVisible(false);
+        const granted = await requestGalleryPermission();
+        if (!granted) return;
+
+        cameraActiveRef.current = true;
+        persistPhotoToParams(photoUri);
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+        });
+
+        if (!result.canceled && result.assets?.length > 0) {
+            const newUri = result.assets[0].uri;
+            setPhotoUri(newUri);
+            persistPhotoToParams(newUri);
+        } else {
+            cameraActiveRef.current = false;
+        }
+    };
+
+    const removePhoto = () => {
+        setPhotoPickerVisible(false);
+        setPhotoUri(null);
+    };
+
+    // ── Save ─────────────────────────────────────────────────────────────────
 
     const handleSave = async () => {
         if (!name.trim()) {
@@ -47,25 +174,45 @@ const EditProfileScreen = ({ navigation }) => {
             return;
         }
         setLoading(true);
+
+        // Build the patch we want to apply
+        const localPatch = {
+            fullName: name.trim(),
+            email: email.trim(),
+            phone: phone.trim(),
+            bio: bio.trim(),
+            gender: gender.trim(),
+            dateOfBirth: dob.trim(),
+            photoURL: photoUri || null,
+        };
+
+        // ✔ Optimistic update — update context immediately so ProfileScreen
+        //   reflects changes right away, even before the API call completes.
+        updateUser(localPatch);
+
+        let alertTitle = 'Success';
+        let alertMsg = 'Profile updated successfully!';
+
         try {
-            const updated = await profileService.updateProfile(uid, {
-                fullName: name.trim(),
-                email: email.trim(),
-                phone: phone.trim(),
-                bio: bio.trim(),
-            });
-            // Merge the response back into AuthContext so the rest of the app sees fresh data
-            updateUser(updated);
-            Alert.alert('Success', 'Profile updated successfully!', [
-                { text: 'OK', onPress: () => navigation.goBack() },
-            ]);
+            const serverProfile = await profileService.updateProfile(uid, localPatch);
+            // Merge server response on top of the optimistic patch to pick up
+            // any server-computed fields (e.g. updatedAt) without losing auth fields.
+            if (serverProfile && typeof serverProfile === 'object') {
+                updateUser(serverProfile);
+            }
         } catch (e) {
             console.error('Update profile error:', e);
-            const msg = e?.response?.data?.message || 'Could not update profile. Please try again.';
-            Alert.alert('Error', msg);
+            // Local context is already updated optimistically — don't revert,
+            // just inform the user the server sync failed.
+            alertTitle = 'Saved Locally';
+            alertMsg = 'Profile saved on device. It will sync when the server is reachable.';
         } finally {
             setLoading(false);
         }
+
+        Alert.alert(alertTitle, alertMsg, [
+            { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
     };
 
     const inputBorderColor = field =>
@@ -80,8 +227,8 @@ const EditProfileScreen = ({ navigation }) => {
             />
 
             {/* ── Header ── */}
-            <View style={[s.header, { 
-                backgroundColor: colors.surface, 
+            <View style={[s.header, {
+                backgroundColor: colors.surface,
                 borderBottomColor: colors.border,
                 paddingTop: insets.top + 8
             }]}>
@@ -104,12 +251,7 @@ const EditProfileScreen = ({ navigation }) => {
                     disabled={loading}
                     activeOpacity={0.8}
                 >
-                    <Text
-                        style={[
-                            s.saveBtnText,
-                            { color: loading ? colors.textMuted : colors.textInverse },
-                        ]}
-                    >
+                    <Text style={[s.saveBtnText, { color: loading ? colors.textMuted : colors.textInverse }]}>
                         {loading ? 'Saving…' : 'Save'}
                     </Text>
                 </TouchableOpacity>
@@ -127,21 +269,30 @@ const EditProfileScreen = ({ navigation }) => {
                 >
                     {/* ── Avatar ── */}
                     <View style={s.avatarSection}>
-                        <View style={[s.avatarRing, { borderColor: colors.accent }]}>
-                            <LinearGradient
-                                colors={gradients.primary}
-                                style={s.avatar}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                            >
-                                <Text style={s.avatarText}>{initials}</Text>
-                            </LinearGradient>
-                        </View>
                         <TouchableOpacity
-                            style={[s.avatarEditBtn, { backgroundColor: colors.accent }]}
-                            activeOpacity={0.8}
+                            onPress={() => setPhotoPickerVisible(true)}
+                            activeOpacity={0.85}
                         >
-                            <Ionicons name="pencil" size={14} color={colors.textInverse} />
+                            <View style={[s.avatarRing, { borderColor: colors.accent }]}>
+                                {photoUri ? (
+                                    <Image
+                                        source={{ uri: photoUri }}
+                                        style={s.avatarImage}
+                                    />
+                                ) : (
+                                    <LinearGradient
+                                        colors={gradients.primary}
+                                        style={s.avatar}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 1 }}
+                                    >
+                                        <Text style={s.avatarText}>{initials}</Text>
+                                    </LinearGradient>
+                                )}
+                            </View>
+                            <View style={[s.avatarEditBtn, { backgroundColor: colors.accent }]}>
+                                <Ionicons name="camera" size={14} color={colors.textInverse} />
+                            </View>
                         </TouchableOpacity>
                         <Text style={[s.avatarHint, { color: colors.textSecondary }]}>
                             Tap to change photo
@@ -224,20 +375,32 @@ const EditProfileScreen = ({ navigation }) => {
                             icon="document-text-outline"
                             isTextArea
                         />
-                    </View>
 
-                    {/* ── Stats Row (read-only) ── */}
-                    <View style={[s.statsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Text style={[s.sectionLabel, { color: colors.textMuted }]}>
-                            ACCOUNT STATS
-                        </Text>
-                        <View style={s.statsRow}>
-                            <StatItem icon="bag-handle-outline" value={user?.stats?.orders ?? '—'} label="Orders" colors={colors} />
-                            <View style={[s.statDivider, { backgroundColor: colors.border }]} />
-                            <StatItem icon="heart-outline" value={user?.stats?.wishlist ?? '—'} label="Wishlist" colors={colors} />
-                            <View style={[s.statDivider, { backgroundColor: colors.border }]} />
-                            <StatItem icon="star-outline" value={user?.stats?.reviews ?? '—'} label="Reviews" colors={colors} />
-                        </View>
+                        {/* Gender */}
+                        <Field
+                            label="Gender"
+                            value={gender}
+                            onChangeText={setGender}
+                            placeholder="e.g. Male, Female, Other"
+                            onFocus={() => setFocusedField('gender')}
+                            onBlur={() => setFocusedField(null)}
+                            borderColor={inputBorderColor('gender')}
+                            colors={colors}
+                            icon="people-outline"
+                        />
+
+                        {/* Date of Birth */}
+                        <Field
+                            label="Date of Birth"
+                            value={dob}
+                            onChangeText={setDob}
+                            placeholder="e.g. 1990-01-01"
+                            onFocus={() => setFocusedField('dob')}
+                            onBlur={() => setFocusedField(null)}
+                            borderColor={inputBorderColor('dob')}
+                            colors={colors}
+                            icon="calendar-outline"
+                        />
                     </View>
 
                     {/* ── Save Button (bottom) ── */}
@@ -250,12 +413,7 @@ const EditProfileScreen = ({ navigation }) => {
                         disabled={loading}
                         activeOpacity={0.8}
                     >
-                        <Text
-                            style={[
-                                s.saveBtnLargeText,
-                                { color: loading ? colors.textMuted : colors.textInverse },
-                            ]}
-                        >
+                        <Text style={[s.saveBtnLargeText, { color: loading ? colors.textMuted : colors.textInverse }]}>
                             {loading ? 'Saving Changes…' : 'Save Changes'}
                         </Text>
                     </TouchableOpacity>
@@ -263,6 +421,90 @@ const EditProfileScreen = ({ navigation }) => {
                     <View style={{ height: 40 }} />
                 </ScrollView>
             </KeyboardAvoidingView>
+
+            {/* ── Photo Picker Bottom Sheet Modal ── */}
+            <Modal
+                visible={photoPickerVisible}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setPhotoPickerVisible(false)}
+            >
+                <TouchableOpacity
+                    style={s.modalOverlay}
+                    activeOpacity={1}
+                    onPress={() => setPhotoPickerVisible(false)}
+                >
+                    <View style={[s.modalSheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        {/* Handle bar */}
+                        <View style={[s.sheetHandle, { backgroundColor: colors.border }]} />
+
+                        <Text style={[s.sheetTitle, { color: colors.textPrimary }]}>
+                            Profile Photo
+                        </Text>
+                        <Text style={[s.sheetSubtitle, { color: colors.textMuted }]}>
+                            Choose how to update your photo
+                        </Text>
+
+                        {/* Camera */}
+                        <TouchableOpacity
+                            style={[s.sheetOption, { borderColor: colors.border }]}
+                            onPress={openCamera}
+                            activeOpacity={0.8}
+                        >
+                            <View style={[s.sheetOptionIcon, { backgroundColor: colors.accent + '20' }]}>
+                                <Ionicons name="camera" size={22} color={colors.accent} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[s.sheetOptionLabel, { color: colors.textPrimary }]}>Take Photo</Text>
+                                <Text style={[s.sheetOptionSub, { color: colors.textMuted }]}>Use your camera</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                        </TouchableOpacity>
+
+                        {/* Gallery */}
+                        <TouchableOpacity
+                            style={[s.sheetOption, { borderColor: colors.border }]}
+                            onPress={openGallery}
+                            activeOpacity={0.8}
+                        >
+                            <View style={[s.sheetOptionIcon, { backgroundColor: '#7B5EEA20' }]}>
+                                <Ionicons name="image" size={22} color="#7B5EEA" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[s.sheetOptionLabel, { color: colors.textPrimary }]}>Choose from Gallery</Text>
+                                <Text style={[s.sheetOptionSub, { color: colors.textMuted }]}>Pick from your photos</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                        </TouchableOpacity>
+
+                        {/* Remove (only if photo exists) */}
+                        {photoUri ? (
+                            <TouchableOpacity
+                                style={[s.sheetOption, { borderColor: colors.border }]}
+                                onPress={removePhoto}
+                                activeOpacity={0.8}
+                            >
+                                <View style={[s.sheetOptionIcon, { backgroundColor: '#FF6B6B20' }]}>
+                                    <Ionicons name="trash-outline" size={22} color="#FF6B6B" />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={[s.sheetOptionLabel, { color: '#FF6B6B' }]}>Remove Photo</Text>
+                                    <Text style={[s.sheetOptionSub, { color: colors.textMuted }]}>Revert to initials</Text>
+                                </View>
+                            </TouchableOpacity>
+                        ) : null}
+
+                        {/* Cancel */}
+                        <TouchableOpacity
+                            style={[s.sheetCancel, { backgroundColor: colors.border + '50' }]}
+                            onPress={() => setPhotoPickerVisible(false)}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={[s.sheetCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
         </View>
     );
 };
@@ -353,13 +595,15 @@ const s = StyleSheet.create({
         width: 84, height: 84, borderRadius: 42,
         alignItems: 'center', justifyContent: 'center',
     },
+    avatarImage: {
+        width: 84, height: 84, borderRadius: 42,
+    },
     avatarText: { fontSize: 28, fontWeight: '800', color: '#fff' },
     avatarEditBtn: {
         position: 'absolute', bottom: 24, right: '32%',
         width: 28, height: 28, borderRadius: 14,
         alignItems: 'center', justifyContent: 'center',
     },
-    avatarEditIcon: { fontSize: 13 },
     avatarHint: { fontSize: 12, marginTop: 4 },
 
     badgeRow: {
@@ -412,6 +656,53 @@ const s = StyleSheet.create({
         alignItems: 'center', marginBottom: 8,
     },
     saveBtnLargeText: { fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
+
+    // Photo Picker Modal
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    modalSheet: {
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        borderWidth: 1,
+        paddingHorizontal: 20,
+        paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+        paddingTop: 12,
+    },
+    sheetHandle: {
+        width: 40, height: 4, borderRadius: 2,
+        alignSelf: 'center', marginBottom: 16,
+    },
+    sheetTitle: {
+        fontSize: 18, fontWeight: '800', letterSpacing: 0.2,
+        marginBottom: 4,
+    },
+    sheetSubtitle: {
+        fontSize: 13, fontWeight: '400',
+        marginBottom: 20,
+    },
+    sheetOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
+        paddingVertical: 14,
+        borderBottomWidth: 1,
+    },
+    sheetOptionIcon: {
+        width: 46, height: 46, borderRadius: 14,
+        alignItems: 'center', justifyContent: 'center',
+    },
+    sheetOptionLabel: { fontSize: 15, fontWeight: '600' },
+    sheetOptionSub: { fontSize: 12, marginTop: 2 },
+    sheetCancel: {
+        marginTop: 16,
+        borderRadius: 14,
+        paddingVertical: 14,
+        alignItems: 'center',
+    },
+    sheetCancelText: { fontSize: 15, fontWeight: '600' },
 });
 
 export default EditProfileScreen;
