@@ -162,7 +162,7 @@ const SearchScreen = ({ navigation, route }) => {
     const [selectedRating, setSelectedRating] = useState(0);
     const [sortBy, setSortBy] = useState('Relevance');
 
-    const categories = ['All', 'Fashion', 'Electronics', 'Home', 'Beauty', 'Sports', 'Books', 'Tech', 'Jewels'];
+    const categories = ['All', 'Fashion (Men)', 'Fashion (Women)', 'Electronics', 'Home & Living', 'Handicrafts', 'Artworks', 'Beauty & Personal Care', 'Sports & Fitness', 'Books & Stationery', 'Food & Beverages'];
     const conditions = ['All', 'New', 'Like New', 'Good', 'Fair'];
     const sortOptions = ['Relevance', 'Price: Low to High', 'Price: High to Low', 'Newest', 'Popular', 'Rating'];
 

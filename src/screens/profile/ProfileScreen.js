@@ -451,7 +451,7 @@ const ProfileScreen = ({ navigation }) => {
                         onPress={() => createMobileNotification(
                             'New Arrival alert! ✨',
                             'Check out the latest Summer Collection. Trending items are back in stock!',
-                            { type: 'announcement', category: 'Fashion' }
+                            { type: 'announcement', category: 'Fashion (Women)' }
                         )}
                         colors={colors}
                         isLast

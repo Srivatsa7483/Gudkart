@@ -1,7 +1,7 @@
 // ─── Gudkart Mock Data ─────────────────────────────────────────────────────
 
 export const CATEGORIES = [
-    { id: '1', name: 'Fashion', icon: 'shirt-outline', color: '#7B5EEA' },
+    { id: '1', name: 'Fashion (Men)', icon: 'shirt-outline', color: '#7B5EEA' },
     { id: '2', name: 'Jewels', icon: 'diamond-outline', color: '#FFD700' },
     { id: '3', name: 'Tech', icon: 'phone-portrait-outline', color: '#60A5FA' },
     { id: '4', name: 'Home', icon: 'home-outline', color: '#4ADE80' },
@@ -39,7 +39,7 @@ export const CURATED_PRODUCTS = [
         discount: 39,
         rating: 4.5,
         reviews: 128,
-        category: 'Fashion',
+        category: 'Fashion (Men)',
         badge: 'HOT',
         badgeColor: '#FFD700',
         emoji: '👟',

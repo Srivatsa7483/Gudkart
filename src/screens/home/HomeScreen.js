@@ -19,6 +19,23 @@ import productService from '../../services/api/productService';
 import NotificationBadge from '../../components/NotificationBadge';
 import { CATEGORIES, TOP_CATEGORIES } from '../../data/categories';
 
+// ─── Build sections config dynamically from ALL categories ────────────────────
+// Fashion (Men) + Fashion (Women) are placed first, then every other category.
+// Sections are shown only if they have ≥1 product (handled in fetchAllSections).
+const buildSectionsConfig = () => {
+    const PRIORITY_IDS = ['Fashion (Men)', 'Fashion (Women)'];
+    const priority = CATEGORIES.filter(c => PRIORITY_IDS.includes(c.id));
+    const rest = CATEGORIES.filter(c => !PRIORITY_IDS.includes(c.id));
+    return [...priority, ...rest].map(cat => ({
+        key: cat.id,
+        title: cat.name,
+        categoryId: cat.id,
+        navCategory: cat.id,
+        accentColor: cat.color,
+    }));
+};
+const SECTIONS_CONFIG_ALL = buildSectionsConfig();
+
 const { width } = Dimensions.get('window');
 const DEAL_WIDTH = width - 32;
 const H_CARD_WIDTH = width * 0.44;   // horizontal-scroll product card
@@ -34,7 +51,7 @@ const FLASH_DEALS = [
         image: 'https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&q=80&w=1000',
         badge: 'Flash Sale', title: 'Fashion Week',
         subtitle: 'Up to 70% off on top brands',
-        cta: 'Shop Now', secondaryCta: 'View All', categoryId: 'Fashion',
+        cta: 'Shop Now', secondaryCta: 'View All', categoryId: 'Fashion (Men)',
     },
     {
         id: 'deal2',
@@ -309,30 +326,32 @@ const ProductSectionRow = ({ title, products, loading, colors, cartCountMap, nav
 };
 
 // ─── Latest Releases Block ─────────────────────────────────────────────────────
-// One big heading, sub-rows for each gender inside a card-like container
+// One sub-row per active category, sorted newest-first within each.
+// Fully dynamic — reuses the already-fetched sections data, zero extra API calls.
 const LatestReleasesBlock = ({
-    menProducts, womenProducts,
-    menLoading, womenLoading,
+    sections, loading,
     colors, isDark, cartCountMap,
     navigation, onAddToCart, onUpdateQty, onRemoveFromCart,
     onToggleWishlist, isInWishlist,
 }) => {
-    const hasContent = menLoading || womenLoading || menProducts.length > 0 || womenProducts.length > 0;
-    if (!hasContent) return null;
+    if (!loading && sections.length === 0) return null;
 
-    const SubRow = ({ title, products, loading, navCategory, accentColor }) => {
-        const accent = accentColor || colors.accent;
-        if (!loading && products.length === 0) return null;
+    const SubRow = ({ section }) => {
+        const accent = section.accentColor || colors.accent;
+        const sorted = [...(section.products || [])].sort(
+            (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+        );
+        if (!section.loading && sorted.length === 0) return null;
         return (
             <View style={[styles.latestSubRow, { borderTopColor: colors.border }]}>
                 <View style={styles.latestSubHeader}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <View style={[styles.latestSubDot, { backgroundColor: accent }]} />
-                        <Text style={[styles.latestSubTitle, { color: colors.textPrimary }]}>{title}</Text>
+                        <Text style={[styles.latestSubTitle, { color: colors.textPrimary }]}>{section.title}</Text>
                     </View>
-                    {!loading && products.length > 0 && (
+                    {!section.loading && sorted.length > 0 && (
                         <TouchableOpacity
-                            onPress={() => navigation.navigate('CategoryScreen', { category: navCategory })}
+                            onPress={() => navigation.navigate('CategoryScreen', { category: section.navCategory })}
                             activeOpacity={0.7}
                             style={[styles.latestViewAllBtn, { borderColor: accent + '50', backgroundColor: accent + '12' }]}
                         >
@@ -341,9 +360,9 @@ const LatestReleasesBlock = ({
                     )}
                 </View>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hScrollContent}>
-                    {loading
+                    {section.loading
                         ? Array.from({ length: 4 }).map((_, i) => <SkeletonHCard key={i} colors={colors} />)
-                        : products.map(item => (
+                        : sorted.map(item => (
                             <HProductCard
                                 key={item.id} item={item} colors={colors}
                                 cartCount={cartCountMap[item.id] || 0}
@@ -368,19 +387,21 @@ const LatestReleasesBlock = ({
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
             >
                 <View style={styles.latestTitleRow}>
-                    <View style={[styles.latestIconBox, { backgroundColor: colors.accent + '22' }]}>
+                    <View style={[styles.latestIconBox, { backgroundColor: '#7B5EEA22' }]}>
                         <Text style={styles.latestEmoji}>🆕</Text>
                     </View>
                     <View>
                         <Text style={[styles.latestBlockTitle, { color: colors.textPrimary }]}>Latest Releases</Text>
-                        <Text style={[styles.latestBlockSub, { color: colors.textMuted }]}>Freshest arrivals just for you</Text>
+                        <Text style={[styles.latestBlockSub, { color: colors.textMuted }]}>Newest arrivals by category</Text>
                     </View>
                 </View>
             </LinearGradient>
 
-            {/* ── Sub-rows ── */}
-            <SubRow title="Fashion — Men" products={menProducts} loading={menLoading} navCategory="Fashion" accentColor="#FF6B6B" />
-            <SubRow title="Fashion — Women" products={womenProducts} loading={womenLoading} navCategory="Fashion" accentColor="#FF9FF3" />
+            {/* ── One sub-row per active category ── */}
+            {loading
+                ? <SubRow section={{ key: 'skeleton', title: 'Loading…', products: [], loading: true, accentColor: colors.accent }} />
+                : sections.map(section => <SubRow key={section.key} section={section} />)
+            }
         </View>
     );
 };
@@ -393,26 +414,11 @@ const HomeScreen = ({ navigation }) => {
     const { toggleWishlist, isInWishlist } = useWishlist();
 
     // ── Per-section product state ──────────────────────────────────────────────
-    // We store sections as [{key, title, categoryId, genderId?, products, loading}]
-    const SECTIONS_CONFIG = useMemo(() => [
-        { key: 'fashion_men', title: 'Fashion (Men)', categoryId: 'Fashion (Men)', navCategory: 'Fashion' },
-        { key: 'fashion_women', title: 'Fashion (Women)', categoryId: 'Fashion (Women)', navCategory: 'Fashion' },
-        { key: 'electronics', title: 'Electronics', categoryId: 'Electronics', navCategory: 'Electronics' },
-        { key: 'home', title: 'Home & Living', categoryId: 'Home & Living', navCategory: 'Home & Living' },
-        { key: 'beauty', title: 'Beauty', categoryId: 'Beauty', navCategory: 'Beauty' },
-        { key: 'sports', title: 'Sports', categoryId: 'Sports', navCategory: 'Sports' },
-        { key: 'grocery', title: 'Grocery', categoryId: 'Grocery', navCategory: 'Grocery' },
-    ], []);
-
-    const initialSections = useMemo(() =>
-        SECTIONS_CONFIG.map(s => ({ ...s, products: [], loading: true }))
-        , [SECTIONS_CONFIG]);
-
-    const [sections, setSections] = useState(initialSections);
-    const [latestMen, setLatestMen] = useState([]);
-    const [latestWomen, setLatestWomen] = useState([]);
-    const [latestMenLoading, setLatestMenLoading] = useState(true);
-    const [latestWomenLoading, setLatestWomenLoading] = useState(true);
+    // Derived dynamically from ALL categories; only sections with ≥1 product are
+    // rendered.  Adding a product to any new category auto-surfaces it here.
+    const [sections, setSections] = useState([]);
+    // latestLoading: true while sections are being fetched (shared with LatestReleasesBlock)
+    const [latestLoading, setLatestLoading] = useState(true);
 
     const [refreshing, setRefreshing] = useState(false);
     const [showPickerModal, setShowPickerModal] = useState(false);
@@ -430,57 +436,38 @@ const HomeScreen = ({ navigation }) => {
         [cartItems]);
 
     // ── Fetch all sections ─────────────────────────────────────────────────────
-    const fetchSection = useCallback(async (sectionConfig) => {
-        try {
-            const res = await productService.getProductsByCategory(sectionConfig.categoryId, { limit: 6 });
-            const list = res.products || res.data || (Array.isArray(res) ? res : []);
-            return { key: sectionConfig.key, products: list.slice(0, 6), loading: false };
-        } catch {
-            return { key: sectionConfig.key, products: [], loading: false };
-        }
-    }, []);
-
     const fetchAllSections = useCallback(async (isRefresh = false) => {
         if (isRefresh) setRefreshing(true);
 
-        // Reset all to loading at once
-        setSections(SECTIONS_CONFIG.map(s => ({ ...s, products: [], loading: true })));
-        setLatestMenLoading(true);
-        setLatestWomenLoading(true);
+        // Show loading skeletons for every category while fetching
+        setSections(SECTIONS_CONFIG_ALL.map(s => ({ ...s, products: [], loading: true })));
+        setLatestLoading(true);
 
-        // ── Fire ALL API calls in parallel ────────────────────────────────────
-        const fetchLatestByGender = async (genderLabel) => {
-            const res = await productService.getProductsByCategory(genderLabel, { limit: 10 });
-            const list = res.products || res.data || (Array.isArray(res) ? res : []);
-            return list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 6);
+        const fetchOneCategory = async (cfg) => {
+            try {
+                const res = await productService.getProductsByCategory(cfg.categoryId, { limit: 6 });
+                const list = res.products || res.data || (Array.isArray(res) ? res : []);
+                return { ...cfg, products: list.slice(0, 6), loading: false };
+            } catch {
+                return { ...cfg, products: [], loading: false };
+            }
         };
 
-        const [sectionResults, menResult, womenResult] = await Promise.all([
-            Promise.allSettled(SECTIONS_CONFIG.map(s => fetchSection(s))),
-            fetchLatestByGender('Fashion (Men)').catch(() => []),
-            fetchLatestByGender('Fashion (Women)').catch(() => []),
-        ]);
+        const sectionResults = await Promise.allSettled(
+            SECTIONS_CONFIG_ALL.map(cfg => fetchOneCategory(cfg))
+        );
 
-        // Update category sections
-        setSections(prev => {
-            const updated = [...prev];
-            sectionResults.forEach(result => {
-                if (result.status === 'fulfilled') {
-                    const idx = updated.findIndex(s => s.key === result.value.key);
-                    if (idx !== -1) updated[idx] = { ...updated[idx], ...result.value };
-                }
-            });
-            return updated;
-        });
+        // Only keep categories that returned ≥1 product
+        const liveSections = sectionResults
+            .filter(r => r.status === 'fulfilled' && r.value.products.length > 0)
+            .map(r => r.value);
 
-        // Update latest releases
-        setLatestMen(menResult);
-        setLatestMenLoading(false);
-        setLatestWomen(womenResult);
-        setLatestWomenLoading(false);
+        setSections(liveSections);
+        // LatestReleasesBlock reuses liveSections — no extra API call needed
+        setLatestLoading(false);
 
         if (isRefresh) setRefreshing(false);
-    }, [SECTIONS_CONFIG, fetchSection]);
+    }, []);
 
     useEffect(() => { fetchAllSections(); }, [fetchAllSections]);
 
@@ -521,7 +508,8 @@ const HomeScreen = ({ navigation }) => {
     const firstName = user?.fullName?.split(' ')[0] || user?.displayName?.split(' ')[0] || user?.name?.split(' ')[0] || 'there';
     const totalCartItems = cartItems.reduce((s, i) => s + (i.quantity || 1), 0);
 
-    // Sections that have products OR are still loading
+    // sections already contains only live (non-empty) entries after fetch;
+    // during the initial load phase any still-loading entries are shown as skeletons.
     const visibleSections = sections.filter(s => s.loading || s.products.length > 0);
 
     return (
@@ -530,13 +518,13 @@ const HomeScreen = ({ navigation }) => {
 
             {/* ── Fixed Header ─────────────────────────────────────────────────── */}
             <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, backgroundColor: headerBg }}>
+                <LinearGradient
+                    colors={isDark ? ['#0D0B1E', '#16132E'] : ['#FFFFFF', '#F8F9FA']}
+                    style={StyleSheet.absoluteFillObject}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                />
                 <SafeAreaView edges={['top']} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
                     <View style={{ paddingBottom: 8 }}>
-                        <LinearGradient
-                            colors={isDark ? ['#0D0B1E', '#16132E'] : ['#FFFFFF', '#F8F9FA']}
-                            style={StyleSheet.absoluteFillObject}
-                            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                        />
                         {/* Brand row */}
                         <View style={styles.header}>
                             <View style={styles.headerLeft}>
@@ -698,7 +686,7 @@ const HomeScreen = ({ navigation }) => {
                     })}
                 </View>
 
-                {/* ── Category Sections (dynamic) ───────────────────────────── */}
+                {/* ── Category Sections (dynamic — only categories with products) ── */}
                 {visibleSections.map(section => (
                     <ProductSectionRow
                         key={section.key}
@@ -712,17 +700,16 @@ const HomeScreen = ({ navigation }) => {
                         onUpdateQty={handleUpdateQty}
                         onRemoveFromCart={handleRemoveFromCart}
                         onViewAll={() => navigation.navigate('CategoryScreen', { category: section.navCategory })}
+                        accentColor={section.accentColor}
                         onToggleWishlist={handleToggleWishlist}
                         isInWishlist={isInWishlist}
                     />
                 ))}
 
-                {/* ── Latest Releases Block (one heading, two sub-rows) ─── */}
+                {/* ── Latest Releases (one sub-row per active category, newest-first) ── */}
                 <LatestReleasesBlock
-                    menProducts={latestMen}
-                    womenProducts={latestWomen}
-                    menLoading={latestMenLoading}
-                    womenLoading={latestWomenLoading}
+                    sections={sections}
+                    loading={latestLoading}
                     colors={colors}
                     isDark={isDark}
                     cartCountMap={cartCountMap}

@@ -1,677 +1,301 @@
-// ─── Gudkart Splash Screen ───────────────────────────────────────────────────
+// ─── Gudkart Splash Screen ────────────────────────────────────────────────────
 //
-// Animated sequence:
-//  0ms  → Background gradient fades in
-//  400ms → Logo appears with scale & glow
-//  800ms → Shopping items burst out from logo (cart, bag, tag, gift, heart, star)
-//  1200ms → "Gudkart" wordmark slides up
-//  1600ms → Tagline fades in
-//  2200ms → Gold shimmer sweeps
-//  3000ms → Everything fades out → navigate
+// Animation sequence:
 //
-// ──────────────────────────────────────────────────────────────────────────
+//   1. Big bag logo drops from top
+//   2. 12 product items fly from edges BEHIND the bag:
+//      STAGE 1: Fly to the mouth of the bag.
+//      STAGE 2: Drop into the belly of the bag.
+//   3. Bag "gulps" as each item enters the mouth.
+//   4. All absorbed → bag jiggles.
+//   5. Bag shrinks away + All 12 Items vanish (force hide).
+//   6. Logo pops in + Brand name + Tagline cascade.
+//
+// ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     View,
-    Text,
     Image,
+    Text,
     Animated,
     StyleSheet,
-    Dimensions,
     StatusBar,
     Easing,
+    Dimensions,
 } from 'react-native';
 import { LinearGradient } from '../../components/SafeLinearGradient';
-import { Ionicons } from '@expo/vector-icons';
 
-const { width, height } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// ── Shopping Item Component ─────────────────────────────────────────────────
-const ShoppingItem = ({ icon, color, delay, angle, distance }) => {
-    const scale = useRef(new Animated.Value(0)).current;
-    const opacity = useRef(new Animated.Value(0)).current;
-    const translateX = useRef(new Animated.Value(0)).current;
-    const translateY = useRef(new Animated.Value(0)).current;
-    const rotate = useRef(new Animated.Value(0)).current;
+const PURPLE = '#7B5EA7';
+const YELLOW = '#F5A800';
+
+const BAG_START_SIZE = 220;
+const ITEM_SIZE = 68;
+const ITEM_STAGGER = 120; // Tightened stagger for 12 items
+const LOGO_SIZE = 100;
+
+const BAG_IMAGE = require('../../assets/icons/logo.png');
+const LOGO_IMAGE = require('../../assets/icons/logo.png');
+
+// Varied product emojis for Fashion, Electronics, Home, and more
+const ITEM_EMOJIS = [
+    '📱', '👟', '👕', '⌚', '🎧', '🧴', // Original 6
+    '🍳', '👔', '👜', '🚲', '💄', '🎮'  // New 6 (Home, Fashion, Accessories, Sports, Beauty, Gamer)
+];
+
+// Expanded 12 edge entry points (Corners, Sides, Top, Bottom)
+const ITEM_STARTS = [
+    // Top Row
+    { x: -SCREEN_WIDTH * 0.70, y: -SCREEN_HEIGHT * 0.48 }, // Top-Left
+    { x: 0, y: -SCREEN_HEIGHT * 0.58 },                   // Top-Center
+    { x: SCREEN_WIDTH * 0.70, y: -SCREEN_HEIGHT * 0.48 },  // Top-Right
+    // Middle-Top
+    { x: -SCREEN_WIDTH * 0.68, y: -SCREEN_HEIGHT * 0.15 },
+    { x: SCREEN_WIDTH * 0.68, y: -SCREEN_HEIGHT * 0.15 },
+    // Middle Row
+    { x: -SCREEN_WIDTH * 0.75, y: SCREEN_HEIGHT * 0.05 },  // Mid-Left
+    { x: SCREEN_WIDTH * 0.75, y: SCREEN_HEIGHT * 0.05 },   // Mid-Right
+    // Middle-Bottom
+    { x: -SCREEN_WIDTH * 0.68, y: SCREEN_HEIGHT * 0.25 },
+    { x: SCREEN_WIDTH * 0.68, y: SCREEN_HEIGHT * 0.25 },
+    // Bottom Row
+    { x: -SCREEN_WIDTH * 0.50, y: SCREEN_HEIGHT * 0.48 },  // Bottom-Left
+    { x: 0, y: SCREEN_HEIGHT * 0.55 },                    // Bottom-Center
+    { x: SCREEN_WIDTH * 0.50, y: SCREEN_HEIGHT * 0.48 },   // Bottom-Right
+];
+
+const GUD_LETTERS = ['G', 'u', 'd'];
+const KART_LETTERS = ['k', 'a', 'r', 't'];
+
+const makeLetter = () => ({
+    opacity: new Animated.Value(0),
+    y: new Animated.Value(24),
+});
+
+const SplashScreen = ({ navigation }) => {
+
+    const bagY = useRef(new Animated.Value(-SCREEN_HEIGHT * 0.6)).current;
+    const bagOpacity = useRef(new Animated.Value(0)).current;
+    const bagScale = useRef(new Animated.Value(0.7)).current;
+    const bagRotate = useRef(new Animated.Value(0)).current;
+    const bagGulp = useRef(new Animated.Value(1)).current;
+
+    const logoOpacity = useRef(new Animated.Value(0)).current;
+    const logoScale = useRef(new Animated.Value(0.6)).current;
+
+    const itemAnims = useRef(
+        ITEM_STARTS.map((start) => ({
+            x: new Animated.Value(start.x),
+            y: new Animated.Value(start.y),
+            scale: new Animated.Value(1),
+            opacity: new Animated.Value(0),
+            rotate: new Animated.Value(0),
+        }))
+    ).current;
+
+    const gudAnims = useRef(GUD_LETTERS.map(makeLetter)).current;
+    const kartAnims = useRef(KART_LETTERS.map(makeLetter)).current;
+
+    const taglineOpacity = useRef(new Animated.Value(0)).current;
+    const taglineY = useRef(new Animated.Value(12)).current;
+
+    const barWidth = useRef(new Animated.Value(0)).current;
+    const barOpacity = useRef(new Animated.Value(0)).current;
+
+    const screenOpacity = useRef(new Animated.Value(1)).current;
+
+    const BAG_MOUTH_Y = -40;
+    const BAG_BELLY_Y = 15;
+
+    const triggerLetter = (anim) =>
+        Animated.parallel([
+            Animated.timing(anim.opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+            Animated.timing(anim.y, { toValue: 0, duration: 300, easing: Easing.out(Easing.back(1.5)), useNativeDriver: true }),
+        ]);
+
+    const triggerBagGulp = (delay) =>
+        Animated.sequence([
+            Animated.delay(delay + 380), // Tightened sync with faster flight
+            Animated.timing(bagGulp, { toValue: 1.08, duration: 100, useNativeDriver: true }),
+            Animated.timing(bagGulp, { toValue: 1, duration: 200, easing: Easing.out(Easing.back(2.5)), useNativeDriver: true }),
+        ]);
+
+    const flyItem = (item, delay, index) => {
+        // Diversified settle positions for 12 items inside the bag belly
+        const settleX = (index % 4 - 1.5) * 14;
+        const settleY = BAG_BELLY_Y + (Math.floor(index / 4) * 12);
+
+        return Animated.sequence([
+            Animated.delay(delay),
+            // STAGE 1: Fly to bag mouth
+            Animated.parallel([
+                Animated.timing(item.opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+                Animated.timing(item.x, { toValue: 0, duration: 420, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+                Animated.timing(item.y, { toValue: BAG_MOUTH_Y, duration: 420, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+                Animated.timing(item.scale, { toValue: 1, duration: 420, useNativeDriver: true }),
+            ]),
+            // STAGE 2: Drop into belly
+            Animated.parallel([
+                Animated.timing(item.x, { toValue: settleX, duration: 280, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+                Animated.timing(item.y, { toValue: settleY, duration: 280, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+                Animated.timing(item.scale, { toValue: 0.45, duration: 280, useNativeDriver: true }),
+                Animated.timing(item.rotate, { toValue: 1, duration: 280, useNativeDriver: true }),
+            ]),
+        ]);
+    };
 
     useEffect(() => {
         Animated.sequence([
-            Animated.delay(delay),
+            // 1. Bag Drop
             Animated.parallel([
-                // Pop in
-                Animated.spring(scale, {
-                    toValue: 1,
-                    tension: 50,
-                    friction: 5,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(opacity, {
-                    toValue: 1,
-                    duration: 300,
-                    useNativeDriver: true,
-                }),
-            ]),
-            // Fly out
-            Animated.parallel([
-                Animated.timing(translateX, {
-                    toValue: Math.cos(angle) * distance,
-                    duration: 800,
-                    easing: Easing.out(Easing.cubic),
-                    useNativeDriver: true,
-                }),
-                Animated.timing(translateY, {
-                    toValue: Math.sin(angle) * distance,
-                    duration: 800,
-                    easing: Easing.out(Easing.cubic),
-                    useNativeDriver: true,
-                }),
-                Animated.timing(rotate, {
-                    toValue: 1,
-                    duration: 800,
-                    useNativeDriver: true,
-                }),
-                // Fade out while flying
-                Animated.timing(opacity, {
-                    toValue: 0,
-                    duration: 600,
-                    delay: 200,
-                    useNativeDriver: true,
-                }),
-            ]),
-        ]).start();
-    }, []);
-
-    const rotation = rotate.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['0deg', '360deg'],
-    });
-
-    return (
-        <Animated.View
-            style={[
-                styles.shoppingItem,
-                {
-                    opacity,
-                    transform: [
-                        { scale },
-                        { translateX },
-                        { translateY },
-                        { rotate: rotation },
-                    ],
-                },
-            ]}
-        >
-            <View style={[styles.itemCircle, { backgroundColor: `${color}20` }]}>
-                <Ionicons name={icon} size={28} color={color} />
-            </View>
-        </Animated.View>
-    );
-};
-
-// ── Sparkle Particle ────────────────────────────────────────────────────────
-const Sparkle = ({ delay, x, y, size }) => {
-    const scale = useRef(new Animated.Value(0)).current;
-    const opacity = useRef(new Animated.Value(0)).current;
-
-    useEffect(() => {
-        Animated.loop(
-            Animated.sequence([
-                Animated.delay(delay),
-                Animated.parallel([
-                    Animated.spring(scale, {
-                        toValue: 1,
-                        tension: 40,
-                        friction: 3,
-                        useNativeDriver: true,
-                    }),
-                    Animated.timing(opacity, {
-                        toValue: 0.8,
-                        duration: 400,
-                        useNativeDriver: true,
-                    }),
-                ]),
-                Animated.timing(opacity, {
-                    toValue: 0,
-                    duration: 600,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(scale, {
-                    toValue: 0,
-                    duration: 0,
-                    useNativeDriver: true,
-                }),
-            ])
-        ).start();
-    }, []);
-
-    return (
-        <Animated.View
-            style={{
-                position: 'absolute',
-                left: x,
-                top: y,
-                width: size,
-                height: size,
-                opacity,
-                transform: [{ scale }],
-            }}
-        >
-            <Ionicons name="sparkles" size={size} color="#FFD700" />
-        </Animated.View>
-    );
-};
-
-// ── Shopping Items Config ──────────────────────────────────────────────────
-const SHOPPING_ITEMS = [
-    { id: 1, icon: 'cart', color: '#FFD700', angle: -Math.PI / 4, distance: 120, delay: 0 },
-    { id: 2, icon: 'bag-handle', color: '#FF6B6B', angle: -Math.PI * 3 / 4, distance: 110, delay: 100 },
-    { id: 3, icon: 'pricetag', color: '#00D9FF', angle: Math.PI / 4, distance: 130, delay: 200 },
-    { id: 4, icon: 'gift', color: '#FF4757', angle: Math.PI * 3 / 4, distance: 115, delay: 150 },
-    { id: 5, icon: 'heart', color: '#FF6B9D', angle: -Math.PI / 2, distance: 125, delay: 50 },
-    { id: 6, icon: 'star', color: '#FFD700', angle: 0, distance: 135, delay: 250 },
-    { id: 7, icon: 'cube', color: '#00D97E', angle: Math.PI, distance: 118, delay: 180 },
-    { id: 8, icon: 'card', color: '#7B5EEA', angle: Math.PI / 2, distance: 122, delay: 220 },
-];
-
-// ── Sparkles Config ────────────────────────────────────────────────────────
-const SPARKLES = [
-    { id: 1, x: width * 0.15, y: height * 0.20, size: 20, delay: 0 },
-    { id: 2, x: width * 0.85, y: height * 0.25, size: 24, delay: 400 },
-    { id: 3, x: width * 0.10, y: height * 0.70, size: 18, delay: 800 },
-    { id: 4, x: width * 0.90, y: height * 0.65, size: 22, delay: 600 },
-    { id: 5, x: width * 0.50, y: height * 0.15, size: 20, delay: 200 },
-    { id: 6, x: width * 0.25, y: height * 0.80, size: 18, delay: 1000 },
-];
-
-// ── Main Splash Screen ─────────────────────────────────────────────────────
-const SplashScreen = ({ navigation }) => {
-    // Animation refs
-    const bgOpacity = useRef(new Animated.Value(0)).current;
-    const logoScale = useRef(new Animated.Value(0)).current;
-    const logoOpacity = useRef(new Animated.Value(0)).current;
-    const glowScale = useRef(new Animated.Value(0.5)).current;
-    const glowOpacity = useRef(new Animated.Value(0)).current;
-    const ringRotate = useRef(new Animated.Value(0)).current;
-    const wordmarkY = useRef(new Animated.Value(30)).current;
-    const wordmarkOp = useRef(new Animated.Value(0)).current;
-    const taglineOp = useRef(new Animated.Value(0)).current;
-    const shimmerX = useRef(new Animated.Value(-width)).current;
-    const exitOpacity = useRef(new Animated.Value(1)).current;
-
-    useEffect(() => {
-        const sequence = Animated.sequence([
-            // 1. Background fades in
-            Animated.timing(bgOpacity, {
-                toValue: 1,
-                duration: 400,
-                useNativeDriver: true,
-            }),
-
-            // 2. Glow appears
-            Animated.parallel([
-                Animated.spring(glowScale, {
-                    toValue: 1,
-                    tension: 30,
-                    friction: 7,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(glowOpacity, {
-                    toValue: 0.4,
-                    duration: 500,
-                    useNativeDriver: true,
-                }),
+                Animated.timing(bagOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+                Animated.timing(bagY, { toValue: 0, duration: 700, easing: Easing.out(Easing.bounce), useNativeDriver: true }),
+                Animated.timing(bagScale, { toValue: 1, duration: 700, useNativeDriver: true }),
             ]),
 
-            // 3. Logo pops in
-            Animated.parallel([
-                Animated.spring(logoScale, {
-                    toValue: 1,
-                    tension: 40,
-                    friction: 6,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(logoOpacity, {
-                    toValue: 1,
-                    duration: 400,
-                    useNativeDriver: true,
-                }),
-            ]),
-
-            // 4. Wait for items to burst out
-            Animated.delay(1000),
-
-            // 5. Wordmark slides up
-            Animated.parallel([
-                Animated.spring(wordmarkY, {
-                    toValue: 0,
-                    tension: 50,
-                    friction: 8,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(wordmarkOp, {
-                    toValue: 1,
-                    duration: 500,
-                    useNativeDriver: true,
-                }),
-            ]),
-
-            // 6. Tagline fades in
             Animated.delay(200),
-            Animated.timing(taglineOp, {
-                toValue: 1,
-                duration: 500,
-                useNativeDriver: true,
-            }),
 
-            // 7. Shimmer effect
-            Animated.delay(300),
-            Animated.timing(shimmerX, {
-                toValue: width * 2,
-                duration: 800,
-                useNativeDriver: true,
-            }),
+            // 2. 12 Items Fly In
+            Animated.parallel([
+                ...itemAnims.map((item, i) => flyItem(item, i * ITEM_STAGGER, i)),
+                ...itemAnims.map((_, i) => triggerBagGulp(i * ITEM_STAGGER)),
+            ]),
 
-            // 8. Hold
-            Animated.delay(400),
+            Animated.delay(100),
 
-            // 9. Fade out
-            Animated.timing(exitOpacity, {
-                toValue: 0,
-                duration: 600,
-                useNativeDriver: true,
-            }),
-        ]);
+            // 3. Jiggle
+            Animated.sequence([
+                Animated.timing(bagRotate, { toValue: 1, duration: 70, useNativeDriver: true }),
+                Animated.timing(bagRotate, { toValue: -1, duration: 80, useNativeDriver: true }),
+                Animated.timing(bagRotate, { toValue: 0, duration: 70, useNativeDriver: true }),
+            ]),
 
-        // Continuous ring rotation
-        Animated.loop(
-            Animated.timing(ringRotate, {
-                toValue: 1,
-                duration: 8000,
-                easing: Easing.linear,
-                useNativeDriver: true,
-            })
-        ).start();
+            Animated.delay(200),
 
-        sequence.start(async () => {
+            // 4. Transform & Reveal (Bag and items shrink together)
+            Animated.parallel([
+                // Bag shrinks
+                Animated.timing(bagScale, { toValue: 0, duration: 450, easing: Easing.in(Easing.back(1.5)), useNativeDriver: true }),
+                Animated.timing(bagOpacity, { toValue: 0, duration: 450, useNativeDriver: true }),
+
+                // ROBUST CLEANUP: Force hide and SHRINK all items (prevents "stopping/stalling" look)
+                ...itemAnims.map(item => Animated.parallel([
+                    Animated.timing(item.opacity, { toValue: 0, duration: 350, useNativeDriver: true }),
+                    Animated.timing(item.scale, { toValue: 0, duration: 400, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+                ])),
+
+                Animated.sequence([
+                    Animated.delay(300),
+                    Animated.parallel([
+                        Animated.timing(logoOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+                        Animated.timing(logoScale, { toValue: 1, duration: 400, easing: Easing.out(Easing.back(2)), useNativeDriver: true }),
+                    ]),
+                ]),
+            ]),
+
+            // 5. Text Cascade
+            Animated.stagger(55, [
+                ...gudAnims.map(a => triggerLetter(a)),
+                ...kartAnims.map(a => triggerLetter(a)),
+            ]),
+
+            Animated.parallel([
+                Animated.timing(taglineOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+                Animated.timing(taglineY, { toValue: 0, duration: 450, useNativeDriver: true }),
+            ]),
+
+            // 6. Progress bar
+            Animated.parallel([
+                Animated.timing(barOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+                Animated.timing(barWidth, { toValue: 1, duration: 1300, useNativeDriver: false }),
+            ]),
+
+            Animated.delay(600),
+
+            // Total Fade Out
+            Animated.timing(screenOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+
+        ]).start(async () => {
             try {
                 const hasLaunched = await AsyncStorage.getItem('hasLaunched');
-                if (hasLaunched === null) {
-                    // First launch — show onboarding
-                    navigation?.replace('Auth');
-                } else {
-                    // Returning user — skip onboarding, go straight to app
-                    navigation?.replace('Main');
-                }
+                navigation?.replace(hasLaunched ? 'Main' : 'Auth');
+                if (!hasLaunched) await AsyncStorage.setItem('hasLaunched', 'true');
             } catch (_) {
-                // Fallback: always go to Auth on error
                 navigation?.replace('Auth');
             }
         });
     }, []);
 
-    const ringRotation = ringRotate.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['0deg', '360deg'],
-    });
+    const barWidthInterp = barWidth.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+    const bagRotation = bagRotate.interpolate({ inputRange: [-1, 0, 1], outputRange: ['-10deg', '0deg', '10deg'] });
 
     return (
-        <View style={styles.container}>
+        <Animated.View style={[styles.container, { opacity: screenOpacity }]}>
             <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+            <LinearGradient colors={['#080612', '#0F0C1F', '#080612']} style={StyleSheet.absoluteFill} />
 
-            {/* Background gradient */}
-            <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: bgOpacity }]}>
-                <LinearGradient
-                    colors={['#0D0618', '#1A0B2E', '#2E1A47', '#1A0B2E']}
-                    style={StyleSheet.absoluteFillObject}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                />
-            </Animated.View>
+            <View style={styles.ambientGlow} />
 
-            {/* Sparkles */}
-            {SPARKLES.map((sparkle) => (
-                <Sparkle key={sparkle.id} {...sparkle} />
-            ))}
-
-            {/* Radial glow behind logo */}
-            <Animated.View
-                style={[
-                    styles.glow,
-                    {
-                        opacity: glowOpacity,
-                        transform: [{ scale: glowScale }],
-                    },
-                ]}
-            />
-
-            {/* Main content */}
-            <Animated.View style={[styles.content, { opacity: exitOpacity }]}>
-                {/* Logo Section */}
-                <View style={styles.logoWrapper}>
-                    {/* Rotating decorative rings */}
-                    <Animated.View
-                        style={[
-                            styles.rotatingRing,
-                            { transform: [{ rotate: ringRotation }] },
-                        ]}
-                    >
-                        <LinearGradient
-                            colors={['#FFD700', 'transparent', '#7B5EEA', 'transparent']}
-                            style={styles.ringGradient}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                        />
-                    </Animated.View>
-
-                    {/* Logo circle */}
-                    <Animated.View
-                        style={[
-                            styles.logoCircle,
-                            {
-                                opacity: logoOpacity,
-                                transform: [{ scale: logoScale }],
-                            },
-                        ]}
-                    >
-                        <LinearGradient
-                            colors={['#2E1A47', '#1A0B2E']}
-                            style={styles.logoGradient}
-                        >
-                            {/* Logo image in centered circle */}
-                            <View style={styles.innerLogoCircle}>
-                                <Image
-                                    source={require('../../assets/icons/logo.png')}
-                                    style={styles.logoImage}
-                                    resizeMode="contain"
-                                />
-                            </View>
-
-                            {/* Shopping items burst out from center */}
-                            {SHOPPING_ITEMS.map((item) => (
-                                <ShoppingItem key={item.id} {...item} />
-                            ))}
-                        </LinearGradient>
-                    </Animated.View>
-
-                    {/* Pulse ring effect */}
-                    <Animated.View
-                        style={[
-                            styles.pulseRing,
-                            {
-                                opacity: logoOpacity,
-                                transform: [{ scale: logoScale }],
-                            },
-                        ]}
-                    />
+            <View style={styles.center}>
+                {/* 1. Products (Back Layer) */}
+                <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                    {itemAnims.map((item, i) => (
+                        <Animated.View key={i} style={[styles.itemWrap, { opacity: item.opacity, transform: [{ translateX: item.x }, { translateY: item.y }, { scale: item.scale }, { rotate: item.rotate.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] }) }] }]}>
+                            <Text style={styles.emoji}>{ITEM_EMOJIS[i]}</Text>
+                        </Animated.View>
+                    ))}
                 </View>
 
-                {/* Wordmark */}
-                <Animated.View
-                    style={[
-                        styles.wordmarkWrapper,
-                        {
-                            opacity: wordmarkOp,
-                            transform: [{ translateY: wordmarkY }],
-                        },
-                    ]}
-                >
-                    <Text style={styles.wordmark}>
-                        <Text style={styles.wordmarkGud}>Gud</Text>
-                        <Text style={styles.wordmarkKart}>kart</Text>
-                    </Text>
-
-                    {/* Shimmer overlay */}
-                    <Animated.View
-                        style={[
-                            styles.shimmer,
-                            { transform: [{ translateX: shimmerX }] },
-                        ]}
-                        pointerEvents="none"
-                    >
-                        <LinearGradient
-                            colors={['transparent', 'rgba(255,215,0,0.6)', 'transparent']}
-                            style={styles.shimmerGradient}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 0 }}
-                        />
-                    </Animated.View>
+                {/* 2. Bag (Middle Layer) */}
+                <Animated.View style={[styles.bagBox, { opacity: bagOpacity, transform: [{ translateY: bagY }, { scale: Animated.multiply(bagScale, bagGulp) }, { rotate: bagRotation }] }]}>
+                    <Image source={BAG_IMAGE} style={styles.fullImage} resizeMode="contain" />
                 </Animated.View>
 
-                {/* Tagline */}
-                <Animated.Text style={[styles.tagline, { opacity: taglineOp }]}>
-                    Your Trusted Marketplace
-                </Animated.Text>
+                {/* 3. Logo & Brand (Front Layer) */}
+                <View style={styles.frontGroup} pointerEvents="none">
+                    <Animated.Image source={LOGO_IMAGE} style={[styles.logo, { opacity: logoOpacity, transform: [{ scale: logoScale }] }]} resizeMode="contain" />
+                    <View style={styles.row}>
+                        {GUD_LETTERS.map((l, i) => (
+                            <Animated.Text key={i} style={[styles.letter, styles.white, { opacity: gudAnims[i].opacity, transform: [{ translateY: gudAnims[i].y }] }]}>{l}</Animated.Text>
+                        ))}
+                        {KART_LETTERS.map((l, i) => (
+                            <Animated.Text key={i} style={[styles.letter, styles.yellow, { opacity: kartAnims[i].opacity, transform: [{ translateY: kartAnims[i].y }] }]}>{l}</Animated.Text>
+                        ))}
+                    </View>
+                    <Animated.Text style={[styles.tag, { opacity: taglineOpacity, transform: [{ translateY: taglineY }] }]}>Gud Deals. Gud Life</Animated.Text>
+                </View>
+            </View>
 
-                {/* Decorative dots */}
-                <Animated.View style={[styles.dots, { opacity: taglineOp }]}>
-                    <View style={[styles.dot, { backgroundColor: '#7B5EEA' }]} />
-                    <View style={[styles.dot, { backgroundColor: '#FFD700', width: 16 }]} />
-                    <View style={[styles.dot, { backgroundColor: '#7B5EEA' }]} />
-                </Animated.View>
-            </Animated.View>
-
-            {/* Bottom brand */}
-            <Animated.View style={[styles.bottomStrip, { opacity: exitOpacity }]}>
-                <View style={styles.brandRow}>
-                    <Ionicons name="storefront" size={16} color="#FFD700" />
-                    <Text style={styles.bottomText}>  Gudkart © 2026</Text>
+            <Animated.View style={[styles.barContainer, { opacity: barOpacity }]}>
+                <View style={styles.track}>
+                    <Animated.View style={[styles.fill, { width: barWidthInterp }]} />
                 </View>
             </Animated.View>
-        </View>
+        </Animated.View>
     );
 };
 
-// ── Styles ─────────────────────────────────────────────────────────────────
-const LOGO_SIZE = 180;
-
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#0D0618',
-    },
-
-    glow: {
-        position: 'absolute',
-        width: width * 0.8,
-        height: width * 0.8,
-        borderRadius: width * 0.4,
-        backgroundColor: '#7B5EEA',
-        top: height * 0.5 - width * 0.4,
-        left: width * 0.1,
-        shadowColor: '#7B5EEA',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 100,
-    },
-
-    content: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-
-    // Logo
-    logoWrapper: {
-        width: LOGO_SIZE,
-        height: LOGO_SIZE,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 40,
-    },
-
-    rotatingRing: {
-        position: 'absolute',
-        width: LOGO_SIZE + 30,
-        height: LOGO_SIZE + 30,
-        borderRadius: (LOGO_SIZE + 30) / 2,
-        padding: 3,
-    },
-
-    ringGradient: {
-        width: '100%',
-        height: '100%',
-        borderRadius: (LOGO_SIZE + 30) / 2,
-    },
-
-    logoCircle: {
-        width: LOGO_SIZE,
-        height: LOGO_SIZE,
-        borderRadius: LOGO_SIZE / 2,
-        overflow: 'visible', // Allow items to fly out
-        shadowColor: '#FFD700',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.8,
-        shadowRadius: 25,
-        elevation: 20,
-    },
-
-    logoGradient: {
-        width: '100%',
-        height: '100%',
-        borderRadius: LOGO_SIZE / 2,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-
-    lettermark: {
-        fontSize: 68,
-        fontWeight: '900',
-        color: '#FFD700',
-        letterSpacing: -1,
-        textShadowColor: 'rgba(255, 215, 0, 0.6)',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 15,
-    },
-
-    logoImage: {
-        width: LOGO_SIZE * 0.9,
-        height: LOGO_SIZE * 0.9,
-    },
-
-    innerLogoCircle: {
-        width: LOGO_SIZE * 0.95,
-        height: LOGO_SIZE * 0.95,
-        borderRadius: (LOGO_SIZE * 0.95) / 2,
-        borderWidth: 2,
-        borderColor: '#FFD70040',
-        backgroundColor: 'rgba(255, 215, 0, 0.05)',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-
-    pulseRing: {
-        position: 'absolute',
-        width: LOGO_SIZE + 20,
-        height: LOGO_SIZE + 20,
-        borderRadius: (LOGO_SIZE + 20) / 2,
-        borderWidth: 2,
-        borderColor: '#FFD70040',
-    },
-
-    // Shopping Items
-    shoppingItem: {
-        position: 'absolute',
-        top: LOGO_SIZE / 2 - 24,
-        left: LOGO_SIZE / 2 - 24,
-    },
-
-    itemCircle: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 2,
-        borderColor: 'rgba(255, 255, 255, 0.2)',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 8,
-    },
-
-    // Wordmark
-    wordmarkWrapper: {
-        marginBottom: 16,
-        position: 'relative',
-        overflow: 'hidden',
-    },
-
-    wordmark: {
-        letterSpacing: -1,
-    },
-
-    wordmarkGud: {
-        fontSize: 56,
-        fontWeight: '900',
-        color: '#FFFFFF',
-        letterSpacing: -1,
-    },
-
-    wordmarkKart: {
-        fontSize: 56,
-        fontWeight: '900',
-        color: '#FFD700',
-        letterSpacing: -1,
-        textShadowColor: 'rgba(255, 215, 0, 0.5)',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 15,
-    },
-
-    shimmer: {
-        position: 'absolute',
-        top: 0,
-        left: -60,
-        width: 60,
-        height: '100%',
-    },
-
-    shimmerGradient: {
-        width: '100%',
-        height: '100%',
-    },
-
-    // Tagline
-    tagline: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#B8B8D1',
-        letterSpacing: 2,
-        textTransform: 'uppercase',
-        marginBottom: 20,
-    },
-
-    // Dots
-    dots: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-
-    dot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-    },
-
-    // Bottom
-    bottomStrip: {
-        paddingBottom: 32,
-        alignItems: 'center',
-    },
-
-    brandRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-
-    bottomText: {
-        fontSize: 12,
-        color: '#8E8EA9',
-        letterSpacing: 0.5,
-    },
+    container: { flex: 1, backgroundColor: '#080612' },
+    ambientGlow: { position: 'absolute', width: 340, height: 340, borderRadius: 170, backgroundColor: PURPLE, opacity: 0.12, top: '35%', alignSelf: 'center' },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    bagBox: { width: BAG_START_SIZE, height: BAG_START_SIZE, justifyContent: 'center', alignItems: 'center' },
+    fullImage: { width: '100%', height: '100%' },
+    itemWrap: { position: 'absolute', width: ITEM_SIZE, height: ITEM_SIZE, top: '50%', left: '50%', marginTop: -ITEM_SIZE / 2, marginLeft: -ITEM_SIZE / 2, justifyContent: 'center', alignItems: 'center' },
+    emoji: { position: 'absolute', fontSize: 32 },
+    frontGroup: { position: 'absolute', alignItems: 'center' },
+    logo: { width: LOGO_SIZE, height: LOGO_SIZE },
+    row: { flexDirection: 'row', marginTop: 15 },
+    letter: { fontSize: 44, fontWeight: '900' },
+    white: { color: '#FFF' },
+    yellow: { color: YELLOW },
+    tag: { fontSize: 13, color: '#888', marginTop: 6, letterSpacing: 1 },
+    barContainer: { position: 'absolute', bottom: 60, width: '100%', alignItems: 'center' },
+    track: { width: 140, height: 2, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' },
+    fill: { height: '100%', backgroundColor: YELLOW },
 });
 
 export default SplashScreen;

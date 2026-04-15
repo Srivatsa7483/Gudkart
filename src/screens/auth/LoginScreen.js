@@ -9,7 +9,7 @@
 // No uid passing via route.params is required anywhere.
 // ──────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     View,
     Text,
@@ -42,10 +42,14 @@ import {
     GoogleAuthProvider,
     signInWithCredential,
     OAuthProvider,
+    PhoneAuthProvider,
 } from 'firebase/auth';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 import * as Apple from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import * as AuthSession from 'expo-auth-session';
+import ENV from '../../config/env';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -73,12 +77,17 @@ const LoginScreen = ({ navigation }) => {
     const { colors, gradients } = useTheme();
 
     // ── Pull login action from the central context ──────────────────────────
-    // uid, user, token are set automatically inside AuthContext.login()
-    const { login, signInWithGoogle } = useAuth();
+    const { login } = useAuth();
 
-    // ── CONFIGURATION ──
-    // Replace this with your actual Web Client ID from the Google Cloud Console
-    const WEB_CLIENT_ID = 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com';
+    // ─────────────────────────────────────────────────────────────────────────
+    // GOOGLE OAUTH CLIENT IDs
+    // Get these from: https://console.cloud.google.com → APIs & Services → Credentials
+    // Create an OAuth 2.0 Client ID for each platform.
+    // For Expo Go, add redirect URI:  https://auth.expo.io/@<your-expo-username>/<app-slug>
+    // ─────────────────────────────────────────────────────────────────────────
+    const ANDROID_CLIENT_ID = ENV.GOOGLE_WEB_CLIENT_ID; // Use Web ID as fallback; User must whitelist Redirect URI
+    const IOS_CLIENT_ID     = ENV.GOOGLE_WEB_CLIENT_ID; // Use Web ID as fallback; User must whitelist Redirect URI
+    const WEB_CLIENT_ID     = ENV.GOOGLE_WEB_CLIENT_ID;
 
     // ── Local UI state ──────────────────────────────────────────────────────
     const [authMethod, setAuthMethod] = useState('email');
@@ -91,6 +100,35 @@ const LoginScreen = ({ navigation }) => {
     const [confirmationResult, setConfirmationResult] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const recaptchaVerifierRef = useRef(null);
+
+    // ── Google OAuth via expo-auth-session (works in Expo Go) ──────────────
+    const [, googleResponse, promptGoogleAsync] = Google.useAuthRequest({
+        androidClientId: ANDROID_CLIENT_ID,
+        iosClientId:     IOS_CLIENT_ID,
+        webClientId:     WEB_CLIENT_ID,
+    });
+
+    // Logging the Redirect URI for debugging (User needs to whitelist this in Google Console)
+    useEffect(() => {
+        const redirectUri = AuthSession.makeRedirectUri();
+        console.log('📡 [LoginScreen] [GOOGLE] Potential Redirect URI:', redirectUri);
+    }, []);
+
+    // Handle Google OAuth response
+    useEffect(() => {
+        if (googleResponse?.type === 'success') {
+            const { authentication } = googleResponse;
+            handleGoogleToken(
+                authentication?.idToken    ?? null,
+                authentication?.accessToken ?? null,
+            );
+        } else if (googleResponse?.type === 'error') {
+            console.error('❌ [LoginScreen] [GOOGLE] OAuth error:', googleResponse.error);
+            setIsLoading(false);
+            Alert.alert('Google Login Failed', googleResponse.error?.message || 'Google sign-in failed.');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [googleResponse]);
 
     // ── Helpers ─────────────────────────────────────────────────────────────
     const validateEmail = (val) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
@@ -179,20 +217,21 @@ const LoginScreen = ({ navigation }) => {
         try {
             console.log('🔥 [LoginScreen] [PHONE] Sending OTP to +91' + cleaned);
             const auth = getAuth();
-
-            if (!recaptchaVerifierRef.current) {
-                recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
-            }
-
-            const confirmation = await signInWithPhoneNumber(auth, `+91${cleaned}`, recaptchaVerifierRef.current);
-            setConfirmationResult(confirmation);
+            const phoneProvider = new PhoneAuthProvider(auth);
+            
+            const verificationId = await phoneProvider.verifyPhoneNumber(
+                `+91${cleaned}`,
+                recaptchaVerifierRef.current
+            );
+            
+            setConfirmationResult({ verificationId });
             setOtpStep(true);
             setIsLoading(false);
             console.log('✅ [LoginScreen] [PHONE] OTP sent');
             Alert.alert('OTP Sent', `A 6-digit OTP has been sent to +91${cleaned}`);
         } catch (err) {
             setIsLoading(false);
-            console.error('❌ [LoginScreen] [PHONE] Send OTP:', err.code, err.message);
+            console.error('❌ [LoginScreen] [PHONE] Send OTP:', err);
             Alert.alert('Error', getFriendlyError(err.code, err.message));
         }
     };
@@ -205,7 +244,9 @@ const LoginScreen = ({ navigation }) => {
         setIsLoading(true);
         try {
             console.log('🔥 [LoginScreen] [PHONE] Verifying OTP...');
-            const userCredential = await confirmationResult.confirm(otp);
+            const credential = PhoneAuthProvider.credential(confirmationResult.verificationId, otp);
+            const userCredential = await signInWithCredential(getAuth(), credential);
+            
             const result = await handleBackendLogin(userCredential, { phone: `+91${phone}` });
             setIsLoading(false);
             if (result.success) navigateAfterLogin();
@@ -217,29 +258,38 @@ const LoginScreen = ({ navigation }) => {
         }
     };
 
-    // ── 4. Google (Native) ──────────────────────────────────────────────────
-    const handleGoogleLogin = async () => {
+    // ── 4. Google — exchange OAuth token with Firebase, then backend ────────
+    const handleGoogleToken = async (idToken, accessToken) => {
         setIsLoading(true);
         try {
-            console.log('🔥 [LoginScreen] [GOOGLE] Triggering native picker...');
-
-            // We call the native implementation from AuthContext
-            const result = await signInWithGoogle(WEB_CLIENT_ID);
-
+            console.log('🔥 [LoginScreen] [GOOGLE] Got tokens — exchanging with Firebase...');
+            const auth = getAuth();
+            // GoogleAuthProvider.credential(idToken, accessToken)
+            const credential = GoogleAuthProvider.credential(idToken, accessToken);
+            const userCredential = await signInWithCredential(auth, credential);
+            console.log('✅ [LoginScreen] [GOOGLE] Firebase sign-in OK');
+            const result = await handleBackendLogin(userCredential);
             setIsLoading(false);
             if (result.success) {
                 navigateAfterLogin();
             } else {
-                // If the user cancelled, we might get an error message like "Sign in in progress" or "Canceled"
-                if (result.error !== 'Canceled') {
-                    Alert.alert('Google Login Failed', result.error || 'Something went wrong.');
-                }
+                Alert.alert('Google Login Failed', result.error || 'Something went wrong.');
             }
         } catch (err) {
             setIsLoading(false);
-            console.error('❌ [LoginScreen] [GOOGLE] Error:', err);
-            Alert.alert('Error', 'An unexpected error occurred during Google Sign-in.');
+            console.error('❌ [LoginScreen] [GOOGLE] Token exchange error:', err);
+            Alert.alert('Google Login Failed', err.message || 'Sign-in failed. Please try again.');
         }
+    };
+
+    const handleGoogleLogin = () => {
+        console.log('🔥 [LoginScreen] [GOOGLE] Opening Google OAuth...');
+        setIsLoading(true);
+        promptGoogleAsync().catch(err => {
+            setIsLoading(false);
+            console.error('❌ [LoginScreen] [GOOGLE] promptAsync error:', err);
+            Alert.alert('Error', 'Could not open Google Sign-in.');
+        });
     };
 
     // ── 5. Apple (iOS only) ─────────────────────────────────────────────────
@@ -484,8 +534,7 @@ const LoginScreen = ({ navigation }) => {
                 </SafeAreaView>
             </LinearGradient>
 
-            {/* Invisible recaptcha anchor for phone auth */}
-            <View nativeID="recaptcha-container" />
+            {/* Phone auth recaptcha has been removed due to Firebase billing limitations */}
         </View>
     );
 };

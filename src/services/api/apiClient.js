@@ -39,8 +39,11 @@ apiClient.interceptors.request.use(
                 token = await AsyncStorage.getItem('@auth_token');
             }
 
-            if (token) {
+            if (token && !token.startsWith('test_')) {
                 config.headers.Authorization = `Bearer ${token}`;
+            } else if (token && token.startsWith('test_')) {
+                config.headers['X-Test-UID'] = token;
+                console.log('📡 [apiClient] Using X-Test-UID for test user:', token);
             } else {
                 console.warn('📡 [apiClient] No token available for request to:', config.url);
             }

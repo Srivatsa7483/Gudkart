@@ -6,7 +6,7 @@
     "scheme": "gudcart",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "backgroundColor": "#ffffff"
     },
@@ -14,7 +14,8 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.vinith_2005.gudcart"
+      "package": "com.vinith_2005.gudcart",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {},
     "plugins": [
@@ -22,8 +23,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "4ec62c1c-5b65-4d79-afd8-aef646439b88"
+        "projectId": "8b5bff3a-97d1-4adf-b4b0-0aa09c7b440c"
       }
-    }
+    },
+    "owner": "vinith_1705"
   }
 }

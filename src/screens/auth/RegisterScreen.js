@@ -1,4 +1,4 @@
-﻿// ─── src/screens/auth/RegisterScreen.js ────────────────────────────────────
+// ─── src/screens/auth/RegisterScreen.js ────────────────────────────────────
 //
 // Connected to the central AuthContext.
 // After a successful registration the context automatically:
@@ -9,7 +9,7 @@
 // No uid passing via route.params is required anywhere.
 // ──────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     View,
     Text,
@@ -42,11 +42,14 @@ import {
     GoogleAuthProvider,
     signInWithCredential,
     OAuthProvider,
+    PhoneAuthProvider,
 } from 'firebase/auth';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 import * as Google from 'expo-auth-session/providers/google';
 import * as Apple from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
+import ENV from '../../config/env';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -91,11 +94,27 @@ const RegisterScreen = ({ navigation }) => {
     const recaptchaVerifierRef = useRef(null);
 
     // Google OAuth session
-    const [, , promptGoogleAsync] = Google.useAuthRequest({
-        androidClientId: 'YOUR_ANDROID_CLIENT_ID.apps.googleusercontent.com',
-        iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
-        webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
+    const [, googleResponse, promptGoogleAsync] = Google.useAuthRequest({
+        androidClientId: ENV.GOOGLE_WEB_CLIENT_ID,
+        iosClientId: ENV.GOOGLE_WEB_CLIENT_ID,
+        webClientId: ENV.GOOGLE_WEB_CLIENT_ID,
     });
+
+    // Handle Google OAuth response (same pattern as LoginScreen)
+    useEffect(() => {
+        if (googleResponse?.type === 'success') {
+            const { authentication } = googleResponse;
+            handleGoogleToken(
+                authentication?.idToken ?? null,
+                authentication?.accessToken ?? null,
+            );
+        } else if (googleResponse?.type === 'error') {
+            console.error('❌ [RegisterScreen] [GOOGLE] OAuth error:', googleResponse.error);
+            setIsLoading(false);
+            Alert.alert('Google Sign-Up Failed', googleResponse.error?.message || 'Google sign-in failed.');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [googleResponse]);
 
     // ── Helpers ─────────────────────────────────────────────────────────────
     const updateFormData = (key, value) => setFormData(prev => ({ ...prev, [key]: value }));
@@ -203,20 +222,21 @@ const RegisterScreen = ({ navigation }) => {
             const cleaned = formData.phone.replace(/\D/g, '');
             console.log('🔥 [RegisterScreen] [PHONE] Sending OTP to +91' + cleaned);
             const auth = getAuth();
+            const phoneProvider = new PhoneAuthProvider(auth);
 
-            if (!recaptchaVerifierRef.current) {
-                recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
-            }
-
-            const confirmation = await signInWithPhoneNumber(auth, `+91${cleaned}`, recaptchaVerifierRef.current);
-            setConfirmationResult(confirmation);
+            const verificationId = await phoneProvider.verifyPhoneNumber(
+                `+91${cleaned}`,
+                recaptchaVerifierRef.current
+            );
+            
+            setConfirmationResult({ verificationId });
             setOtpStep(true);
             setIsLoading(false);
             console.log('✅ [RegisterScreen] [PHONE] OTP sent');
             Alert.alert('OTP Sent', `A 6-digit OTP has been sent to +91${cleaned}`);
         } catch (err) {
             setIsLoading(false);
-            console.error('❌ [RegisterScreen] [PHONE] Send OTP:', err.code, err.message);
+            console.error('❌ [RegisterScreen] [PHONE] Send OTP:', err);
             Alert.alert('Error', getFriendlyError(err.code, err.message));
         }
     };
@@ -229,7 +249,9 @@ const RegisterScreen = ({ navigation }) => {
         setIsLoading(true);
         try {
             console.log('🔥 [RegisterScreen] [PHONE] Verifying OTP...');
-            const userCredential = await confirmationResult.confirm(otp);
+            const credential = PhoneAuthProvider.credential(confirmationResult.verificationId, otp);
+            const userCredential = await signInWithCredential(getAuth(), credential);
+            
             const result = await handleBackendRegister(userCredential);
             setIsLoading(false);
             if (result.success) navigateAfterRegister();
@@ -241,22 +263,13 @@ const RegisterScreen = ({ navigation }) => {
         }
     };
 
-    // ── 4. Google Sign-Up ───────────────────────────────────────────────────
-    const handleGoogleRegister = async () => {
+    // ── 4. Google — exchange OAuth token with Firebase, then backend ────────
+    const handleGoogleToken = async (idToken, accessToken) => {
         setIsLoading(true);
         try {
-            console.log('🔥 [RegisterScreen] [GOOGLE] Prompting Google sign-in...');
-            const response = await promptGoogleAsync();
-
-            if (response?.type !== 'success') {
-                setIsLoading(false);
-                console.log('ℹ️ [RegisterScreen] [GOOGLE] Cancelled');
-                return;
-            }
-
-            const { id_token } = response.params;
+            console.log('🔥 [RegisterScreen] [GOOGLE] Got tokens — exchanging with Firebase...');
             const auth = getAuth();
-            const credential = GoogleAuthProvider.credential(id_token);
+            const credential = GoogleAuthProvider.credential(idToken, accessToken);
             const userCredential = await signInWithCredential(auth, credential);
 
             console.log('✅ [RegisterScreen] [GOOGLE] Firebase sign-in OK');
@@ -266,9 +279,19 @@ const RegisterScreen = ({ navigation }) => {
             else Alert.alert('Error', result.error || 'Google sign-up failed');
         } catch (err) {
             setIsLoading(false);
-            console.error('❌ [RegisterScreen] [GOOGLE]', err.code, err.message);
-            Alert.alert('Google Sign-Up Failed', getFriendlyError(err.code, err.message));
+            console.error('❌ [RegisterScreen] [GOOGLE] Token exchange error:', err);
+            Alert.alert('Google Sign-Up Failed', err.message || 'Sign-in failed. Please try again.');
         }
+    };
+
+    const handleGoogleRegister = () => {
+        console.log('🔥 [RegisterScreen] [GOOGLE] Opening Google OAuth...');
+        setIsLoading(true);
+        promptGoogleAsync().catch(err => {
+            setIsLoading(false);
+            console.error('❌ [RegisterScreen] [GOOGLE] promptAsync error:', err);
+            Alert.alert('Error', 'Could not open Google Sign-in.');
+        });
     };
 
     // ── 5. Apple Sign-Up (iOS only) ─────────────────────────────────────────
@@ -616,8 +639,7 @@ const RegisterScreen = ({ navigation }) => {
                 </SafeAreaView>
             </LinearGradient>
 
-            {/* Invisible recaptcha anchor for phone auth */}
-            <View nativeID="recaptcha-container" />
+            {/* Phone auth recaptcha has been removed due to Firebase billing limitations */}
         </View>
     );
 };

@@ -1,4 +1,4 @@
-﻿// ─── CouponsScreen.js ──────────────────────────────────────────────────────
+// ─── CouponsScreen.js ──────────────────────────────────────────────────────
 // Gudkart — Expo Go compatible
 //
 // Features:
@@ -65,9 +65,9 @@ const COUPONS = [
         minOrder: 5000,
         title: '₹1500 Off on Tech',
         description: 'Flat ₹1500 off on all electronics & gadgets.',
-        category: 'Tech',
+        category: 'Electronics',
         categoryIcon: 'phone-portrait-outline',
-        categoryColor: '#60A5FA',
+        categoryColor: '#7B5EEA',
         expiry: '15 Apr 2025',
         status: 'active',
         gradient: ['#0D1E3A', '#112240'],
@@ -99,7 +99,7 @@ const COUPONS = [
         minOrder: 3000,
         title: '10% Off on Jewellery',
         description: 'Special discount on all jewellery items.',
-        category: 'Jewels',
+        category: 'Jewelry & Accessories',
         categoryIcon: 'diamond-outline',
         categoryColor: '#F5C842',
         expiry: '20 Apr 2025',
@@ -116,9 +116,9 @@ const COUPONS = [
         minOrder: 1499,
         title: '25% Off on Fashion',
         description: 'Trendy clothes, shoes & accessories at 25% off.',
-        category: 'Fashion',
+        category: 'Fashion (Men)',
         categoryIcon: 'shirt-outline',
-        categoryColor: '#F472B6',
+        categoryColor: '#60A5FA',
         expiry: '10 Apr 2025',
         status: 'used',
         gradient: ['#1E0F1A', '#2A1422'],
