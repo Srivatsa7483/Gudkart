@@ -47,9 +47,32 @@ import {
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 import * as Apple from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import * as AuthSession from 'expo-auth-session';
+// GoogleSignin is loaded dynamically below to prevent crashes in Expo Go
 import ENV from '../../config/env';
+
+let GoogleSignin = null;
+let statusCodes = null;
+
+try {
+    const GoogleSigninModule = require('@react-native-google-signin/google-signin');
+    GoogleSignin = GoogleSigninModule.GoogleSignin;
+    statusCodes = GoogleSigninModule.statusCodes;
+} catch (e) {
+    console.log('ℹ️ [LoginScreen] GoogleSignin module not found (Expo Go)');
+}
+
+
+// Configure Native Google Sign-In safely
+try {
+    if (GoogleSignin) {
+        GoogleSignin.configure({
+            webClientId: ENV.GOOGLE_WEB_CLIENT_ID,
+        });
+    }
+} catch (e) {
+    console.log('ℹ️ [LoginScreen] Error configuring GoogleSignin:', e.message);
+}
+
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -80,14 +103,7 @@ const LoginScreen = ({ navigation }) => {
     const { login } = useAuth();
 
     // ─────────────────────────────────────────────────────────────────────────
-    // GOOGLE OAUTH CLIENT IDs
-    // Get these from: https://console.cloud.google.com → APIs & Services → Credentials
-    // Create an OAuth 2.0 Client ID for each platform.
-    // For Expo Go, add redirect URI:  https://auth.expo.io/@<your-expo-username>/<app-slug>
-    // ─────────────────────────────────────────────────────────────────────────
-    const ANDROID_CLIENT_ID = ENV.GOOGLE_WEB_CLIENT_ID; // Use Web ID as fallback; User must whitelist Redirect URI
-    const IOS_CLIENT_ID     = ENV.GOOGLE_WEB_CLIENT_ID; // Use Web ID as fallback; User must whitelist Redirect URI
-    const WEB_CLIENT_ID     = ENV.GOOGLE_WEB_CLIENT_ID;
+    // Google Configuration is now handled natively via GoogleSignin.configure()
 
     // ── Local UI state ──────────────────────────────────────────────────────
     const [authMethod, setAuthMethod] = useState('email');
@@ -101,34 +117,7 @@ const LoginScreen = ({ navigation }) => {
     const [isLoading, setIsLoading] = useState(false);
     const recaptchaVerifierRef = useRef(null);
 
-    // ── Google OAuth via expo-auth-session (works in Expo Go) ──────────────
-    const [, googleResponse, promptGoogleAsync] = Google.useAuthRequest({
-        androidClientId: ANDROID_CLIENT_ID,
-        iosClientId:     IOS_CLIENT_ID,
-        webClientId:     WEB_CLIENT_ID,
-    });
-
-    // Logging the Redirect URI for debugging (User needs to whitelist this in Google Console)
-    useEffect(() => {
-        const redirectUri = AuthSession.makeRedirectUri();
-        console.log('📡 [LoginScreen] [GOOGLE] Potential Redirect URI:', redirectUri);
-    }, []);
-
-    // Handle Google OAuth response
-    useEffect(() => {
-        if (googleResponse?.type === 'success') {
-            const { authentication } = googleResponse;
-            handleGoogleToken(
-                authentication?.idToken    ?? null,
-                authentication?.accessToken ?? null,
-            );
-        } else if (googleResponse?.type === 'error') {
-            console.error('❌ [LoginScreen] [GOOGLE] OAuth error:', googleResponse.error);
-            setIsLoading(false);
-            Alert.alert('Google Login Failed', googleResponse.error?.message || 'Google sign-in failed.');
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [googleResponse]);
+    // Native Google Sign-In does not require AuthSession redirect hooks.
 
     // ── Helpers ─────────────────────────────────────────────────────────────
     const validateEmail = (val) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
@@ -259,37 +248,42 @@ const LoginScreen = ({ navigation }) => {
     };
 
     // ── 4. Google — exchange OAuth token with Firebase, then backend ────────
-    const handleGoogleToken = async (idToken, accessToken) => {
+    const handleGoogleLogin = async () => {
         setIsLoading(true);
         try {
-            console.log('🔥 [LoginScreen] [GOOGLE] Got tokens — exchanging with Firebase...');
+            console.log('🔥 [LoginScreen] [GOOGLE] Opening Native Google OAuth...');
+            await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+            const userInfo = await GoogleSignin.signIn();
+            
+            // Support both v13+ and older object shapes
+            const idToken = userInfo.data?.idToken || userInfo.idToken;
+
+            if (!idToken) throw new Error('No ID token present');
+
+            console.log('✅ [LoginScreen] [GOOGLE] Got token — exchanging with Firebase...');
             const auth = getAuth();
-            // GoogleAuthProvider.credential(idToken, accessToken)
-            const credential = GoogleAuthProvider.credential(idToken, accessToken);
+            const credential = GoogleAuthProvider.credential(idToken);
             const userCredential = await signInWithCredential(auth, credential);
+
             console.log('✅ [LoginScreen] [GOOGLE] Firebase sign-in OK');
             const result = await handleBackendLogin(userCredential);
             setIsLoading(false);
-            if (result.success) {
-                navigateAfterLogin();
+            
+            if (result.success) navigateAfterLogin();
+            else Alert.alert('Error', result.error || 'Google login failed');
+        } catch (error) {
+            setIsLoading(false);
+            if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+                console.log('ℹ️ [LoginScreen] [GOOGLE] Cancelled');
+            } else if (error.code === statusCodes.IN_PROGRESS) {
+                console.log('ℹ️ [LoginScreen] [GOOGLE] In progress');
+            } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+                Alert.alert('Error', 'Play services not available or outdated');
             } else {
-                Alert.alert('Google Login Failed', result.error || 'Something went wrong.');
+                console.error('❌ [LoginScreen] [GOOGLE] Error:', error);
+                Alert.alert('Google Login Failed', error.message || 'Could not open Google Sign-in.');
             }
-        } catch (err) {
-            setIsLoading(false);
-            console.error('❌ [LoginScreen] [GOOGLE] Token exchange error:', err);
-            Alert.alert('Google Login Failed', err.message || 'Sign-in failed. Please try again.');
         }
-    };
-
-    const handleGoogleLogin = () => {
-        console.log('🔥 [LoginScreen] [GOOGLE] Opening Google OAuth...');
-        setIsLoading(true);
-        promptGoogleAsync().catch(err => {
-            setIsLoading(false);
-            console.error('❌ [LoginScreen] [GOOGLE] promptAsync error:', err);
-            Alert.alert('Error', 'Could not open Google Sign-in.');
-        });
     };
 
     // ── 5. Apple (iOS only) ─────────────────────────────────────────────────

@@ -15,11 +15,13 @@
     },
     "android": {
       "package": "com.vinith_2005.gudcart",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "newArchEnabled": true
     },
     "web": {},
     "plugins": [
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "eas": {
