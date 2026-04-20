@@ -40,3 +40,7 @@ DerivedData/
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Sensitive credentials
+serviceAccountKey.json
+google-services.json
